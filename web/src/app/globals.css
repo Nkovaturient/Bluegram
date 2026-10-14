@@ -1,0 +1,276 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+  background: #04090f;
+  color: #e7eef7;
+}
+
+@layer base {
+  * {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-ink;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.15) transparent;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  .noise-texture {
+    position: relative;
+  }
+
+  .noise-texture::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='4' numOctaves='4' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.015'/%3E%3C/svg%3E");
+    pointer-events: none;
+    mix-blend-mode: overlay;
+  }
+
+  .btn-hover {
+    @apply transition-all duration-200 ease-out hover:scale-[1.02] hover:brightness-110;
+  }
+
+  .card-glow-significant {
+    @apply border-success/45 shadow-glow-success;
+  }
+
+  .card-glow-primary {
+    @apply border-primary/55 shadow-glow;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(255 255 255 / 0.15) transparent;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  @keyframes pulse-once {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.05);
+    }
+  }
+
+  .animate-pulse-once {
+    animation: pulse-once 0.6s ease-in-out;
+  }
+}
+
+.trend-post-copy--success {
+  border-color: rgb(52 211 153 / 0.45);
+  background: rgb(52 211 153 / 0.12);
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.globe-marker-badge {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translate(-50%, -100%);
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.globe-marker-badge--mode-hidden {
+  pointer-events: none;
+}
+
+.globe-marker-badge--mode-hidden .globe-marker-badge__pointer,
+.globe-marker-badge--mode-hidden .globe-marker-badge__body {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.globe-marker-badge--mode-compact .globe-marker-badge__body {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 11rem;
+  padding: 4px 8px;
+}
+
+.globe-marker-badge--mode-compact .globe-marker-badge__icon,
+.globe-marker-badge--mode-compact .globe-marker-badge__unit,
+.globe-marker-badge--mode-compact .globe-marker-badge__region-type {
+  display: none;
+}
+
+.globe-marker-badge--mode-compact .globe-marker-badge__title,
+.globe-marker-badge--mode-compact .globe-marker-badge__name,
+.globe-marker-badge--mode-compact .globe-marker-badge__slope {
+  grid-column: unset;
+}
+
+.globe-marker-badge--mode-hidden .globe-marker-badge__region-type {
+  display: none;
+}
+
+.globe-marker-badge--mode-compact .globe-marker-badge__name {
+  font-size: 10px;
+}
+
+.globe-marker-badge--mode-compact .globe-marker-badge__slope {
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.globe-marker-badge--selected {
+  transform: translate(-50%, -100%) scale(1.06);
+  z-index: 2;
+}
+
+.globe-marker-badge--mode-compact {
+  z-index: 1;
+}
+
+.globe-marker-badge__pointer {
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid rgb(12 21 32 / 0.95);
+  margin-bottom: -1px;
+}
+
+.globe-marker-badge__body {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  gap: 0 6px;
+  align-items: center;
+  max-width: 9.5rem;
+  padding: 5px 8px 6px;
+  border-radius: 8px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  background: rgb(8 14 22 / 0.92);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.45);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.2;
+}
+
+.globe-marker-badge--significant .globe-marker-badge__body {
+  border-color: rgb(52 211 153 / 0.45);
+}
+
+.globe-marker-badge--borderline .globe-marker-badge__body {
+  border-color: rgb(251 191 36 / 0.45);
+}
+
+.globe-marker-badge--muted .globe-marker-badge__body {
+  border-color: rgb(148 163 184 / 0.35);
+}
+
+.globe-marker-badge--selected .globe-marker-badge__body {
+  border-color: rgb(255 107 74 / 0.55);
+  box-shadow: 0 0 0 1px rgb(255 107 74 / 0.25), 0 6px 18px rgb(0 0 0 / 0.5);
+}
+
+.globe-marker-badge__icon {
+  width: 14px;
+  height: 14px;
+  color: rgb(203 213 225);
+  grid-row: 1 / span 2;
+}
+
+.globe-marker-badge__title {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.globe-marker-badge--mode-full .globe-marker-badge__title {
+  display: flex;
+}
+
+.globe-marker-badge__region-type {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+}
+
+.globe-marker-badge__region-type svg {
+  width: 12px;
+  height: 12px;
+}
+
+.globe-marker-badge__region-type--polar {
+  color: rgb(147 197 253);
+}
+
+.globe-marker-badge__region-type--tropical {
+  color: rgb(74 222 128);
+}
+
+.globe-marker-badge__region-type--arid {
+  color: rgb(251 191 36);
+}
+
+.globe-marker-badge__region-type--temperate {
+  color: rgb(134 239 172);
+}
+
+.globe-marker-badge__name {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgb(241 245 249);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.globe-marker-badge__slope {
+  grid-column: 2;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(255 209 196);
+}
+
+.globe-marker-badge__unit {
+  grid-column: 2;
+  font-family: ui-monospace, monospace;
+  font-size: 9px;
+  color: rgb(100 116 139);
+}
