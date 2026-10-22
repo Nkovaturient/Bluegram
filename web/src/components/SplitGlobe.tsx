@@ -2,22 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
+import type { MeshBasicMaterial } from "three";
 import {
-  MathUtils,
-  Vector3,
-  type Group,
-  type Mesh,
-  type PerspectiveCamera,
-  type SphereGeometry,
-} from "three";
+  GLOBE_RADIUS,
+  createAtmosphereHaloMesh,
+  createSlopePinMesh,
+  latLonToVector3,
+  orientGroupOnSphere,
+} from "@/lib/globeGeo";
+import { formatCoord } from "@/lib/labels";
 import { slopeColorHex, slopeSpan } from "@/lib/slopeColor";
 import type { Region, VariableId } from "@/lib/types";
 
 const GIBS_BLUE_MARBLE =
   "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=BlueMarble_ShadedRelief_Bathymetry&FORMAT=image/jpeg&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=2048&HEIGHT=1024&STYLES=";
 
-const GLOBE_RADIUS = 1;
-const FLY_MS = 800;
+const FLY_S = 0.85;
+const CAMERA_DISTANCE = 2.3;
 
 type SplitGlobeProps = {
   regionA: Region;
@@ -28,24 +29,38 @@ type SplitGlobeProps = {
 
 export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const pinMatARef = useRef<MeshBasicMaterial | null>(null);
+  const pinMatBRef = useRef<MeshBasicMaterial | null>(null);
+  const slopesRef = useRef(slopes);
+  slopesRef.current = slopes;
+
   const [textureState, setTextureState] = useState<"loading" | "ready" | "error">("loading");
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    const span = slopeSpan(slopes);
+    const slopeA = slopes[regionA.id];
+    const slopeB = slopes[regionB.id];
+    if (pinMatARef.current) {
+      pinMatARef.current.color.setHex(
+        typeof slopeA === "number" ? slopeColorHex(slopeA, span) : 0xff6b4a,
+      );
+    }
+    if (pinMatBRef.current) {
+      pinMatBRef.current.color.setHex(
+        typeof slopeB === "number" ? slopeColorHex(slopeB, span) : 0xff6b4a,
+      );
+    }
+  }, [slopes, regionA.id, regionB.id, variable]);
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container || !mounted) {
+    if (!container) {
       return;
     }
 
     let disposed = false;
-    let cleanupSceneA: (() => void) | undefined;
-    let cleanupSceneB: (() => void) | undefined;
-    let frameA = 0;
-    let frameB = 0;
+    let cleanup: (() => void) | undefined;
+    let frame = 0;
 
     void (async () => {
       const THREE = await import("three");
@@ -55,63 +70,118 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
         return;
       }
 
-      const width = container.clientWidth / 2;
-      const height = container.clientHeight;
+      const fullWidth = Math.max(2, container.clientWidth);
+      const halfWidth = Math.floor(fullWidth / 2);
+      const height = Math.max(2, container.clientHeight);
 
       const sceneA = new THREE.Scene();
       const sceneB = new THREE.Scene();
 
-      const cameraA = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
-      cameraA.position.z = 2.5;
-      const cameraB = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
-      cameraB.position.z = 2.5;
+      const cameraA = new THREE.PerspectiveCamera(42, halfWidth / height, 0.1, 50);
+      const cameraB = new THREE.PerspectiveCamera(42, halfWidth / height, 0.1, 50);
+      cameraA.position.set(1.4, 0.55, 2.4);
+      cameraB.position.set(1.4, 0.55, 2.4);
 
-      const rendererA = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      rendererA.setSize(width, height);
+      const rendererA = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      rendererA.setClearColor(0x04090f, 1);
+      rendererA.outputColorSpace = THREE.SRGBColorSpace;
       rendererA.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      rendererA.setSize(halfWidth, height);
       rendererA.domElement.style.position = "absolute";
       rendererA.domElement.style.left = "0";
       rendererA.domElement.style.top = "0";
       container.appendChild(rendererA.domElement);
 
-      const rendererB = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      rendererB.setSize(width, height);
+      const rendererB = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      rendererB.setClearColor(0x04090f, 1);
+      rendererB.outputColorSpace = THREE.SRGBColorSpace;
       rendererB.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      rendererB.setSize(halfWidth, height);
       rendererB.domElement.style.position = "absolute";
-      rendererB.domElement.style.left = `${width}px`;
+      rendererB.domElement.style.left = `${halfWidth}px`;
       rendererB.domElement.style.top = "0";
       container.appendChild(rendererB.domElement);
 
       const controlsA = new OrbitControls(cameraA, rendererA.domElement);
       controlsA.enableDamping = true;
-      controlsA.dampingFactor = 0.05;
+      controlsA.dampingFactor = 0.08;
       controlsA.enablePan = false;
-      controlsA.minDistance = 1.5;
-      controlsA.maxDistance = 4;
+      controlsA.minDistance = 1.4;
+      controlsA.maxDistance = 5;
 
       const controlsB = new OrbitControls(cameraB, rendererB.domElement);
       controlsB.enableDamping = true;
-      controlsB.dampingFactor = 0.05;
+      controlsB.dampingFactor = 0.08;
       controlsB.enablePan = false;
-      controlsB.minDistance = 1.5;
-      controlsB.maxDistance = 4;
+      controlsB.minDistance = 1.4;
+      controlsB.maxDistance = 5;
 
-      const ambientA = new THREE.AmbientLight(0xffffff, 0.8);
-      sceneA.add(ambientA);
-      const ambientB = new THREE.AmbientLight(0xffffff, 0.8);
-      sceneB.add(ambientB);
+      const earthA = new THREE.Group();
+      const earthB = new THREE.Group();
+      sceneA.add(earthA);
+      sceneB.add(earthB);
 
-      const directionalA = new THREE.DirectionalLight(0xffffff, 0.6);
-      directionalA.position.set(5, 3, 5);
-      sceneA.add(directionalA);
-      const directionalB = new THREE.DirectionalLight(0xffffff, 0.6);
-      directionalB.position.set(5, 3, 5);
-      sceneB.add(directionalB);
+      const haloA = createAtmosphereHaloMesh(GLOBE_RADIUS, 0x38bdf8);
+      const haloB = createAtmosphereHaloMesh(GLOBE_RADIUS, 0x38bdf8);
+      sceneA.add(haloA.mesh);
+      sceneB.add(haloB.mesh);
 
-      const geometry = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
+      const currentSlopes = slopesRef.current;
+      const span = slopeSpan(currentSlopes);
+      const colorA =
+        typeof currentSlopes[regionA.id] === "number"
+          ? slopeColorHex(currentSlopes[regionA.id], span)
+          : 0xff6b4a;
+      const colorB =
+        typeof currentSlopes[regionB.id] === "number"
+          ? slopeColorHex(currentSlopes[regionB.id], span)
+          : 0xff6b4a;
 
+      const pinObjA = createSlopePinMesh(colorA);
+      orientGroupOnSphere(pinObjA.group, regionA.latitude, regionA.longitude, GLOBE_RADIUS);
+      earthA.add(pinObjA.group);
+      pinMatARef.current = pinObjA.material;
+
+      const pinObjB = createSlopePinMesh(colorB);
+      orientGroupOnSphere(pinObjB.group, regionB.latitude, regionB.longitude, GLOBE_RADIUS);
+      earthB.add(pinObjB.group);
+      pinMatBRef.current = pinObjB.material;
+
+      const targetCamA = latLonToVector3(
+        regionA.latitude,
+        regionA.longitude,
+        CAMERA_DISTANCE,
+      );
+      const targetCamB = latLonToVector3(
+        regionB.latitude,
+        regionB.longitude,
+        CAMERA_DISTANCE,
+      );
+
+      gsap.to(cameraA.position, {
+        x: targetCamA.x,
+        y: targetCamA.y,
+        z: targetCamA.z,
+        duration: FLY_S,
+        ease: "power2.out",
+        onUpdate: () => controlsA.update(),
+      });
+
+      gsap.to(cameraB.position, {
+        x: targetCamB.x,
+        y: targetCamB.y,
+        z: targetCamB.z,
+        duration: FLY_S,
+        ease: "power2.out",
+        onUpdate: () => controlsB.update(),
+      });
+
+      const geometry = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 48);
       const textureLoader = new THREE.TextureLoader();
       textureLoader.setCrossOrigin("anonymous");
+      let sharedTexture: import("three").Texture | null = null;
+      let matA: MeshBasicMaterial | null = null;
+      let matB: MeshBasicMaterial | null = null;
 
       textureLoader.load(
         GIBS_BLUE_MARBLE,
@@ -120,40 +190,27 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
             texture.dispose();
             return;
           }
-
-          const materialA = new THREE.MeshStandardMaterial({
-            map: texture,
-            roughness: 0.9,
-            metalness: 0.1,
-          });
-          const materialB = new THREE.MeshStandardMaterial({
-            map: texture,
-            roughness: 0.9,
-            metalness: 0.1,
-          });
-
-          const globeA = new THREE.Mesh(geometry, materialA);
-          sceneA.add(globeA);
-          const globeB = new THREE.Mesh(geometry, materialB);
-          sceneB.add(globeB);
-
-          flyToRegion(globeA, controlsA, regionA.latitude, regionA.longitude);
-          flyToRegion(globeB, controlsB, regionB.latitude, regionB.longitude);
-
+          sharedTexture = texture;
+          texture.colorSpace = THREE.SRGBColorSpace;
+          matA = new THREE.MeshBasicMaterial({ map: texture });
+          matB = new THREE.MeshBasicMaterial({ map: texture });
+          earthA.add(new THREE.Mesh(geometry, matA));
+          earthB.add(new THREE.Mesh(geometry, matB));
           setTextureState("ready");
         },
         undefined,
-        (error) => {
-          console.error("Failed to load texture:", error);
-          setTextureState("error");
-        }
+        () => {
+          if (!disposed) {
+            setTextureState("error");
+          }
+        },
       );
 
       const animate = () => {
         if (disposed) {
           return;
         }
-        frameA = requestAnimationFrame(animate);
+        frame = requestAnimationFrame(animate);
         controlsA.update();
         controlsB.update();
         rendererA.render(sceneA, cameraA);
@@ -165,116 +222,135 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
         if (disposed || !container) {
           return;
         }
-        const newWidth = container.clientWidth / 2;
-        const newHeight = container.clientHeight;
+        const newHalf = Math.max(1, Math.floor(container.clientWidth / 2));
+        const newHeight = Math.max(1, container.clientHeight);
 
-        cameraA.aspect = newWidth / newHeight;
+        cameraA.aspect = newHalf / newHeight;
         cameraA.updateProjectionMatrix();
-        rendererA.setSize(newWidth, newHeight);
+        rendererA.setSize(newHalf, newHeight);
 
-        cameraB.aspect = newWidth / newHeight;
+        cameraB.aspect = newHalf / newHeight;
         cameraB.updateProjectionMatrix();
-        rendererB.setSize(newWidth, newHeight);
-        rendererB.domElement.style.left = `${newWidth}px`;
+        rendererB.setSize(newHalf, newHeight);
+        rendererB.domElement.style.left = `${newHalf}px`;
       };
 
-      window.addEventListener("resize", handleResize);
+      const observer = new ResizeObserver(handleResize);
+      observer.observe(container);
 
-      cleanupSceneA = () => {
+      cleanup = () => {
         disposed = true;
-        if (frameA) {
-          cancelAnimationFrame(frameA);
+        pinMatARef.current = null;
+        pinMatBRef.current = null;
+        if (frame) {
+          cancelAnimationFrame(frame);
         }
-        window.removeEventListener("resize", handleResize);
+        gsap.killTweensOf(cameraA.position);
+        gsap.killTweensOf(cameraB.position);
+        observer.disconnect();
         controlsA.dispose();
-        rendererA.dispose();
-        geometry.dispose();
-        sceneA.traverse((obj) => {
-          if (obj instanceof THREE.Mesh) {
-            obj.geometry?.dispose();
-            if (obj.material instanceof THREE.Material) {
-              obj.material.dispose();
-            }
-          }
-        });
-        container.removeChild(rendererA.domElement);
-      };
-
-      cleanupSceneB = () => {
-        if (frameB) {
-          cancelAnimationFrame(frameB);
-        }
         controlsB.dispose();
+        pinObjA.geometry.dispose();
+        pinObjA.material.dispose();
+        pinObjB.geometry.dispose();
+        pinObjB.material.dispose();
+        haloA.geometry.dispose();
+        haloA.material.dispose();
+        haloB.geometry.dispose();
+        haloB.material.dispose();
+        geometry.dispose();
+        matA?.dispose();
+        matB?.dispose();
+        sharedTexture?.dispose();
+        rendererA.dispose();
         rendererB.dispose();
-        sceneB.traverse((obj) => {
-          if (obj instanceof THREE.Mesh) {
-            obj.geometry?.dispose();
-            if (obj.material instanceof THREE.Material) {
-              obj.material.dispose();
-            }
-          }
-        });
-        container.removeChild(rendererB.domElement);
+        rendererA.domElement.remove();
+        rendererB.domElement.remove();
       };
     })();
 
     return () => {
       disposed = true;
-      cleanupSceneA?.();
-      cleanupSceneB?.();
+      cleanup?.();
     };
-  }, [regionA, regionB, mounted]);
+  }, [regionA, regionB]);
+
+  const slopeA = slopes[regionA.id];
+  const slopeB = slopes[regionB.id];
+  const unit = variable === "temperature" ? "°C/dec" : "mm/d/dec";
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full overflow-hidden">
       <div ref={containerRef} className="h-full w-full bg-[#04090f]">
         {textureState === "loading" && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-xs text-slate-500">Loading globes…</p>
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <p className="font-mono text-xs text-slate-400">
+              Calibrating dual NASA GIBS globes…
+            </p>
           </div>
         )}
         {textureState === "error" && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-xs text-red-400">Failed to load globe textures</p>
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <p className="font-mono text-xs text-red-400">
+              Failed to load NASA GIBS Blue Marble texture
+            </p>
           </div>
         )}
       </div>
-      <div className="pointer-events-none absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-white/20 to-transparent" />
-      <div className="pointer-events-none absolute bottom-4 left-4 rounded-lg border border-white/10 bg-[#0c1520]/90 px-3 py-2 backdrop-blur-sm">
-        <p className="text-xs font-medium text-slate-300">{regionA.name}</p>
-        <p className="text-[10px] text-slate-500">Region A</p>
+
+      {/* Calibrated Telemetry Seam & Reticle */}
+      <div className="pointer-events-none absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-sky-300/25 to-transparent" />
+      <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+        <div className="glass-pill flex h-8 w-8 items-center justify-center rounded-full border border-white/15 font-mono text-[10px] font-semibold tracking-wider text-slate-300">
+          VS
+        </div>
       </div>
-      <div className="pointer-events-none absolute bottom-4 right-4 rounded-lg border border-white/10 bg-[#0c1520]/90 px-3 py-2 backdrop-blur-sm">
-        <p className="text-xs font-medium text-slate-300">{regionB.name}</p>
-        <p className="text-[10px] text-slate-500">Region B</p>
+
+      {/* Region A Telemetry Pill */}
+      <div className="glass-pill pointer-events-none absolute bottom-4 left-4 rounded-xl px-3.5 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            Region A
+          </span>
+          <span className="font-mono text-[10px] text-slate-500">
+            {formatCoord(regionA.latitude, regionA.longitude)}
+          </span>
+        </div>
+        <p className="mt-0.5 font-display text-sm font-semibold text-white">{regionA.name}</p>
+        {typeof slopeA === "number" && (
+          <p
+            className={`mt-0.5 font-mono text-xs font-semibold tabular-nums ${
+              slopeA > 0 ? "text-rose-300" : slopeA < 0 ? "text-sky-300" : "text-slate-300"
+            }`}
+          >
+            {slopeA >= 0 ? "+" : ""}
+            {slopeA.toFixed(3)} {unit}
+          </p>
+        )}
+      </div>
+
+      {/* Region B Telemetry Pill */}
+      <div className="glass-pill pointer-events-none absolute bottom-4 right-4 rounded-xl px-3.5 py-2.5 text-right">
+        <div className="flex items-center justify-end gap-2">
+          <span className="font-mono text-[10px] text-slate-500">
+            {formatCoord(regionB.latitude, regionB.longitude)}
+          </span>
+          <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            Region B
+          </span>
+        </div>
+        <p className="mt-0.5 font-display text-sm font-semibold text-white">{regionB.name}</p>
+        {typeof slopeB === "number" && (
+          <p
+            className={`mt-0.5 font-mono text-xs font-semibold tabular-nums ${
+              slopeB > 0 ? "text-rose-300" : slopeB < 0 ? "text-sky-300" : "text-slate-300"
+            }`}
+          >
+            {slopeB >= 0 ? "+" : ""}
+            {slopeB.toFixed(3)} {unit}
+          </p>
+        )}
       </div>
     </div>
   );
-}
-
-function flyToRegion(
-  globe: Mesh<SphereGeometry>,
-  controls: { target: Vector3; update: () => void },
-  latitude: number,
-  longitude: number
-) {
-  const phi = MathUtils.degToRad(90 - latitude);
-  const theta = MathUtils.degToRad(longitude);
-  const x = GLOBE_RADIUS * Math.sin(phi) * Math.cos(theta);
-  const y = GLOBE_RADIUS * Math.cos(phi);
-  const z = GLOBE_RADIUS * Math.sin(phi) * Math.sin(theta);
-  
-  const target = new Vector3(x, y, z);
-  
-  gsap.to(controls.target, {
-    x: target.x,
-    y: target.y,
-    z: target.z,
-    duration: FLY_MS / 1000,
-    ease: "power2.inOut",
-    onUpdate: () => controls.update(),
-  });
-
-  globe.rotation.y = -theta;
-  globe.rotation.x = phi - Math.PI / 2;
 }

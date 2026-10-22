@@ -1,3 +1,4 @@
+import { REGION_BY_ID } from "@/lib/regions";
 import type { Region, VariableId } from "@/lib/types";
 
 export type ContradictionPair = {
@@ -9,247 +10,90 @@ export type ContradictionPair = {
   variable: VariableId;
   reason: string;
   category: "ice" | "vegetation" | "ocean" | "atmosphere" | "precipitation";
+  source?: "curated" | "live";
 };
+
+function requireRegion(id: string): Region {
+  const region = REGION_BY_ID.get(id);
+  if (!region) {
+    throw new Error(`Unknown region id in curated pairs: ${id}`);
+  }
+  return region;
+}
+
+export const DEFAULT_FEATURED_PAIR_ID = "arctic-antarctic-temp";
 
 export const CURATED_CONTRADICTION_PAIRS: ContradictionPair[] = [
   {
-    id: "arctic-antarctic-temp",
+    id: DEFAULT_FEATURED_PAIR_ID,
     name: "Arctic vs Antarctic Warming",
-    description: "Polar amplification shows opposite patterns",
-    regionA: {
-      id: "arctic",
-      name: "Arctic",
-      latitude: 75,
-      longitude: -40,
-    },
-    regionB: {
-      id: "antarctic",
-      name: "Antarctic",
-      latitude: -75,
-      longitude: 0,
-    },
+    description: "Polar temperature contrast on NASA POWER (ice mass anomaly deferred until GRACE-FO/NSIDC integration)",
+    regionA: requireRegion("arctic"),
+    regionB: requireRegion("antarctic"),
     variable: "temperature",
-    reason: "Arctic experiences amplified warming while Antarctic interior remains relatively stable due to differences in ocean circulation, ice-albedo feedback, and continental vs oceanic geography.",
+    reason:
+      "Polar temperature contrast on NASA POWER (ice mass deferred until GRACE/NSIDC lands): the Arctic undergoes amplified warming from sea-ice-albedo feedback and oceanic heat transport, while the high-elevation Antarctic interior is buffered by the circumpolar vortex and Southern Ocean upwelling.",
     category: "ice",
+    source: "curated",
   },
   {
-    id: "amazon-sahel-vegetation",
-    name: "Amazon vs Sahel Greening",
-    description: "CO₂ fertilization with opposing regional moisture",
-    regionA: {
-      id: "amazon",
-      name: "Amazon",
-      latitude: -3.4,
-      longitude: -62,
-    },
-    regionB: {
-      id: "sahel",
-      name: "Sahel",
-      latitude: 14,
-      longitude: 0,
-    },
+    id: "amazon-sahel-temp",
+    name: "Amazon vs Sahel Thermal Regime",
+    description: "Humid tropical canopy vs semi-arid transition zone",
+    regionA: requireRegion("amazon"),
+    regionB: requireRegion("sahel"),
     variable: "temperature",
-    reason: "While CO₂ fertilization promotes greening globally, Amazon faces deforestation and drought stress, whereas Sahel shows recovery greening from improved rainfall patterns and land management.",
+    reason:
+      "Evaporative cooling and cloud cover in the humid Amazon basin modulate surface temperature trends differently from the semi-arid Sahel, where land-atmosphere dust and soil-moisture feedbacks amplify thermal shifts.",
     category: "vegetation",
+    source: "curated",
   },
   {
-    id: "north-atlantic-west-pacific-temp",
-    name: "N. Atlantic vs W. Pacific SST",
-    description: "Atlantic warming vs Pacific cooling phases",
-    regionA: {
-      id: "north_atlantic",
-      name: "N. Atlantic",
-      latitude: 45,
-      longitude: -30,
-    },
-    regionB: {
-      id: "west_pacific",
-      name: "W. Pacific",
-      latitude: 10,
-      longitude: 140,
-    },
+    id: "n-atlantic-w-pacific-temp",
+    name: "N. Atlantic vs W. Pacific Ocean",
+    description: "Atlantic multidecadal circulation vs Indo-Pacific warm pool",
+    regionA: requireRegion("n-atlantic"),
+    regionB: requireRegion("w-pacific"),
     variable: "temperature",
-    reason: "Atlantic Multidecadal Oscillation drives warming in North Atlantic, while Pacific Decadal Oscillation and La Niña-like trends create relative cooling in Western Pacific regions.",
+    reason:
+      "North Atlantic surface temperatures respond to Atlantic Meridional Overturning and multidecadal variability, whereas the Western Pacific warm pool is governed by trade-wind intensity and ENSO/PDO phase shifts.",
     category: "ocean",
+    source: "curated",
   },
   {
-    id: "bengal-gulf-precip",
+    id: "bay-of-bengal-gulf-of-mexico-precip",
     name: "Bay of Bengal vs Gulf of Mexico",
-    description: "Monsoon intensification vs hurricane season shifts",
-    regionA: {
-      id: "bay_of_bengal",
-      name: "Bay of Bengal",
-      latitude: 15,
-      longitude: 88,
-    },
-    regionB: {
-      id: "gulf_of_mexico",
-      name: "Gulf of Mexico",
-      latitude: 25,
-      longitude: -90,
-    },
+    description: "South Asian monsoon basin vs subtropical Atlantic gulf",
+    regionA: requireRegion("bay-of-bengal"),
+    regionB: requireRegion("gulf-of-mexico"),
     variable: "precipitation",
-    reason: "South Asian monsoon intensifies with warming, increasing Bay of Bengal precipitation, while Gulf of Mexico shows seasonal redistribution with more extreme events but variable total precipitation.",
+    reason:
+      "Indian Ocean warming and monsoon dynamics drive distinct moisture convergence trends over the Bay of Bengal compared with the Gulf of Mexico, where subtropical high-pressure ridges and Atlantic storm tracks control rainfall.",
     category: "precipitation",
+    source: "curated",
   },
   {
-    id: "siberia-southwest-us-temp",
-    name: "Siberia vs SW USA Warming",
-    description: "Continental interior temperature extremes",
-    regionA: {
-      id: "siberia",
-      name: "Siberia",
-      latitude: 62,
-      longitude: 100,
-    },
-    regionB: {
-      id: "southwest_usa",
-      name: "SW USA",
-      latitude: 34,
-      longitude: -112,
-    },
+    id: "siberia-sw-usa-temp",
+    name: "Siberia vs SW USA Continental",
+    description: "Boreal snow-albedo amplification vs arid subtropical interior",
+    regionA: requireRegion("siberia"),
+    regionB: requireRegion("sw-usa"),
     variable: "temperature",
-    reason: "Siberia shows extreme high-latitude amplification (>2× global average), while SW USA experiences moderate warming modulated by Pacific ocean patterns and drought-heat feedbacks.",
+    reason:
+      "High-latitude Siberia experiences strong snow- and permafrost-albedo amplification under greenhouse forcing, while the arid US Southwest is modulated by Pacific decadal sea-surface patterns and subtropical ridge persistence.",
     category: "atmosphere",
+    source: "curated",
   },
   {
-    id: "greenland-west-antarctic-temp",
-    name: "Greenland vs W. Antarctic Ice",
-    description: "Ice sheet mass loss mechanisms differ",
-    regionA: {
-      id: "greenland",
-      name: "Greenland",
-      latitude: 72,
-      longitude: -40,
-    },
-    regionB: {
-      id: "west_antarctic",
-      name: "W. Antarctic",
-      latitude: -78,
-      longitude: -100,
-    },
-    variable: "temperature",
-    reason: "Greenland ice loss driven primarily by surface melting and runoff, while West Antarctic driven by warm ocean water undermining ice shelves from below - same driver (warming), different mechanisms.",
-    category: "ice",
-  },
-  {
-    id: "mediterranean-horn-africa-precip",
-    name: "Mediterranean vs Horn of Africa",
-    description: "Subtropical drying vs equatorial variability",
-    regionA: {
-      id: "mediterranean",
-      name: "Mediterranean",
-      latitude: 38,
-      longitude: 15,
-    },
-    regionB: {
-      id: "horn_of_africa",
-      name: "Horn of Africa",
-      latitude: 8,
-      longitude: 42,
-    },
+    id: "sahel-sw-usa-precip",
+    name: "Sahel vs SW USA Arid Margins",
+    description: "West African monsoon recovery vs North American megadrought",
+    regionA: requireRegion("sahel"),
+    regionB: requireRegion("sw-usa"),
     variable: "precipitation",
-    reason: "Mediterranean experiences subtropical drying from poleward expansion of Hadley cells, while Horn of Africa shows high interannual variability with recent drought trends from Indian Ocean warming.",
+    reason:
+      "The Sahel has shown multi-decade rainfall recovery since the 1980s drought minimum tied to Atlantic SST gradients, while the American Southwest faces subtropical drying and cool-season precipitation deficits.",
     category: "precipitation",
-  },
-  {
-    id: "scandinavia-central-asia-temp",
-    name: "Scandinavia vs Central Asia",
-    description: "Maritime vs continental warming responses",
-    regionA: {
-      id: "scandinavia",
-      name: "Scandinavia",
-      latitude: 62,
-      longitude: 15,
-    },
-    regionB: {
-      id: "central_asia",
-      name: "Central Asia",
-      latitude: 45,
-      longitude: 65,
-    },
-    variable: "temperature",
-    reason: "Scandinavia's maritime climate shows moderated warming with Atlantic influence, while Central Asia's continental interior experiences extreme warming with reduced snow cover feedback.",
-    category: "atmosphere",
-  },
-  {
-    id: "east-pacific-west-pacific-temp",
-    name: "E. Pacific vs W. Pacific Trends",
-    description: "Walker circulation strengthening effects",
-    regionA: {
-      id: "east_pacific",
-      name: "E. Pacific",
-      latitude: -5,
-      longitude: -110,
-    },
-    regionB: {
-      id: "west_pacific",
-      name: "W. Pacific",
-      latitude: -5,
-      longitude: 160,
-    },
-    variable: "temperature",
-    reason: "Strengthened trade winds enhance upwelling in Eastern Pacific (cooling), while Western Pacific warm pool intensifies (warming) - a La Niña-like pattern superimposed on global warming.",
-    category: "ocean",
-  },
-  {
-    id: "india-australia-precip",
-    name: "Indian Monsoon vs Australian Outback",
-    description: "Monsoon enhancement vs subtropical drying",
-    regionA: {
-      id: "india_monsoon",
-      name: "India",
-      latitude: 22,
-      longitude: 78,
-    },
-    regionB: {
-      id: "australia_outback",
-      name: "Australia",
-      latitude: -25,
-      longitude: 135,
-    },
-    variable: "precipitation",
-    reason: "Indian monsoon intensifies with warming oceans despite variability, while Australian interior experiences persistent drying from subtropical high-pressure system intensification.",
-    category: "precipitation",
-  },
-  {
-    id: "alaska-patagonia-temp",
-    name: "Alaska vs Patagonia Glaciers",
-    description: "High-latitude vs mid-latitude glacier response",
-    regionA: {
-      id: "alaska",
-      name: "Alaska",
-      latitude: 63,
-      longitude: -152,
-    },
-    regionB: {
-      id: "patagonia",
-      name: "Patagonia",
-      latitude: -50,
-      longitude: -73,
-    },
-    variable: "temperature",
-    reason: "Alaska glaciers experience extreme polar amplification and rapid retreat, while Patagonian glaciers show moderate warming but complex responses to Southern Ocean and westerly wind shifts.",
-    category: "ice",
-  },
-  {
-    id: "western-europe-eastern-europe-temp",
-    name: "Western vs Eastern Europe",
-    description: "Atlantic vs continental climate regimes",
-    regionA: {
-      id: "western_europe",
-      name: "Western Europe",
-      latitude: 50,
-      longitude: 5,
-    },
-    regionB: {
-      id: "eastern_europe",
-      name: "Eastern Europe",
-      latitude: 50,
-      longitude: 30,
-    },
-    variable: "temperature",
-    reason: "Western Europe's oceanic influence moderates temperature trends and increases precipitation, while Eastern Europe shows continental extremes with winter cold snaps despite overall warming.",
-    category: "atmosphere",
+    source: "curated",
   },
 ];

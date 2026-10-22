@@ -1,34 +1,62 @@
 "use client";
 
+import { getVariablePalette } from "@/lib/variableMeta";
 import type { VariableId } from "@/lib/types";
 
-const TABS: { id: VariableId; label: string }[] = [
-  { id: "temperature", label: "Temperature" },
-  { id: "precipitation", label: "Precipitation" },
+const TABS: { id: VariableId; label: string; code: string }[] = [
+  { id: "temperature", label: "Temperature", code: "T2M" },
+  { id: "precipitation", label: "Precipitation", code: "PRECTOT" },
 ];
 
 type VariableTabsProps = {
   value: VariableId;
   onChange: (variable: VariableId) => void;
+  compact?: boolean;
 };
 
-export function VariableTabs({ value, onChange }: VariableTabsProps) {
+export function VariableTabs({ value, onChange, compact = false }: VariableTabsProps) {
   return (
-    <div className="flex flex-wrap gap-2 px-4 pt-3 lg:px-5" role="tablist" aria-label="Variable">
+    <div
+      className={
+        compact
+          ? "inline-flex items-center gap-1 rounded-pill border border-white/10 bg-[#08101a]/90 p-1"
+          : "flex flex-wrap gap-2 px-4 pt-3.5 lg:px-5"
+      }
+      role="tablist"
+      aria-label="Earth system variable"
+    >
       {TABS.map((tab) => {
         const selected = tab.id === value;
+        const palette = getVariablePalette(tab.id);
         return (
           <button
             key={tab.id}
             type="button"
             role="tab"
             aria-selected={selected}
+            data-agent-action={`select-variable-${tab.id}`}
             onClick={() => onChange(tab.id)}
-            className={`rounded-full px-3.5 py-2 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff6b4a]/60 ${
-              selected ? "bg-white/15 text-white" : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+            className={`inline-flex items-center gap-1.5 rounded-pill border text-xs font-medium transition-all duration-200 ${
+              compact ? "px-3 py-1.5" : "px-3.5 py-2"
+            } ${
+              selected
+                ? palette.activeTabClass
+                : "border-transparent text-slate-400 hover:bg-white/5 hover:text-slate-200"
             }`}
           >
-            {tab.label}
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{
+                backgroundColor: selected ? palette.accentHex : "rgba(148, 163, 184, 0.45)",
+              }}
+              aria-hidden="true"
+            />
+            <span>{tab.label}</span>
+            {compact && (
+              <span className="hidden font-mono text-[10px] opacity-65 sm:inline">
+                {tab.code}
+              </span>
+            )}
           </button>
         );
       })}

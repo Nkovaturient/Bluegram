@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
   MathUtils,
   Vector3,
@@ -16,6 +16,13 @@ import {
   type GlobeMarkerDisplayMode,
   type GlobeMarkerMeta,
 } from "@/components/globeMarkerBadge";
+import {
+  GLOBE_RADIUS,
+  PIN_HEIGHT,
+  PIN_RADIUS,
+  createAtmosphereHaloMesh,
+  latLonToVector3,
+} from "@/lib/globeGeo";
 import { getRegionType } from "@/lib/regionMeta";
 import { slopeColorHex, slopeSpan } from "@/lib/slopeColor";
 import type { Region, VariableId } from "@/lib/types";
@@ -23,10 +30,7 @@ import type { Region, VariableId } from "@/lib/types";
 const GIBS_BLUE_MARBLE =
   "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=BlueMarble_ShadedRelief_Bathymetry&FORMAT=image/jpeg&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=2048&HEIGHT=1024&STYLES=";
 
-const GLOBE_RADIUS = 1;
 const FLY_MS = 800;
-const PIN_HEIGHT = 0.055;
-const PIN_RADIUS = 0.014;
 
 type Fly = {
   from: Vector3;
@@ -57,7 +61,14 @@ type GlobeProps = {
   onSelect: (regionId: string) => void;
 };
 
-export function Globe({ regions, slopes, markerMeta, variable, selectedId, onSelect }: GlobeProps) {
+function GlobeInner({
+  regions,
+  slopes,
+  markerMeta,
+  variable,
+  selectedId,
+  onSelect,
+}: GlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef(selectedId);
   const onSelectRef = useRef(onSelect);
@@ -137,6 +148,8 @@ export function Globe({ regions, slopes, markerMeta, variable, selectedId, onSel
 
     const earth = new THREE.Group();
     scene.add(earth);
+    const atmosphereHalo = createAtmosphereHaloMesh(GLOBE_RADIUS, 0x38bdf8);
+    scene.add(atmosphereHalo.mesh);
     const markerGroups = new Map<string, MarkerGroup>();
     const hitTargets: Mesh[] = [];
 
@@ -401,6 +414,8 @@ export function Globe({ regions, slopes, markerMeta, variable, selectedId, onSel
       }
       pinGeometry.dispose();
       hitGeometry.dispose();
+      atmosphereHalo.geometry.dispose();
+      atmosphereHalo.material.dispose();
       for (const marker of markerGroups.values()) {
         const pinMat = marker.pin.material;
         const hitMat = marker.hit.material;
@@ -460,13 +475,15 @@ export function Globe({ regions, slopes, markerMeta, variable, selectedId, onSel
     <div className="relative h-full w-full">
       <div ref={containerRef} className="absolute inset-0" />
       {textureState === "loading" ? (
-        <p className="pointer-events-none absolute bottom-4 left-4 text-xs text-slate-400">
+        <div className="glass-pill pointer-events-none absolute bottom-4 left-4 rounded-pill px-3.5 py-1.5 font-mono text-xs text-slate-300">
           Loading NASA GIBS Blue Marble…
-        </p>
+        </div>
       ) : textureState === "ready" ? (
-        <p className="pointer-events-none absolute bottom-4 left-4 right-4 text-center text-[11px] text-slate-500 sm:left-4 sm:right-auto sm:text-left">
-          Drag to rotate · Hover a pin for summary · Click to open trend · Blue declining, red rising
-        </p>
+        <div className="glass-pill pointer-events-none absolute bottom-4 left-4 hidden rounded-pill px-3.5 py-1.5 font-mono text-[11px] text-slate-400 sm:block">
+          Drag to orbit · Hover pin for telemetry · Click to inspect trend ·{" "}
+          <span className="text-sky-300">Blue declining</span> ·{" "}
+          <span className="text-rose-300">Red rising</span>
+        </div>
       ) : null}
       {textureState === "error" && textureError ? (
         <p className="absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-red-300">
@@ -477,13 +494,48 @@ export function Globe({ regions, slopes, markerMeta, variable, selectedId, onSel
   );
 }
 
-function latLonToVector3(latitude: number, longitude: number, radius: number): Vector3 {
-  const theta = ((90 - latitude) * Math.PI) / 180;
-  const phi = ((longitude + 180) * Math.PI) / 180;
-  const sinTheta = Math.sin(theta);
-  return new Vector3(
-    -radius * Math.cos(phi) * sinTheta,
-    radius * Math.cos(theta),
-    radius * Math.sin(phi) * sinTheta,
-  );
+function compareGlobeProps(prev: GlobeProps, next: GlobeProps): boolean {
+  if (prev.selectedId !== next.selectedId || prev.variable !== next.variable) {
+    return false;
+  }
+  if (prev.slopes !== next.slopes) {
+    const prevKeys = Object.keys(prev.slopes);
+    const nextKeys = Object.keys(next.slopes);
+    if (prevKeys.length !== nextKeys.length) {
+      return false;
+    }
+    for (const key of prevKeys) {
+      if (prev.slopes[key] !== next.slopes[key]) {
+        return false;
+      }
+    }
+  }
+  if (prev.regions.length !== next.regions.length) {
+    return false;
+  }
+  for (let i = 0; i < prev.regions.length; i++) {
+    const a = prev.regions[i];
+    const b = next.regions[i];
+    if (a.id !== b.id || a.latitude !== b.latitude || a.longitude !== b.longitude) {
+      return false;
+    }
+  }
+  if (prev.markerMeta.length !== next.markerMeta.length) {
+    return false;
+  }
+  for (let i = 0; i < prev.markerMeta.length; i++) {
+    const a = prev.markerMeta[i];
+    const b = next.markerMeta[i];
+    if (
+      a.regionId !== b.regionId ||
+      a.slopePerDecade !== b.slopePerDecade ||
+      a.significance !== b.significance ||
+      a.unit !== b.unit
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
+
+export const Globe = memo(GlobeInner, compareGlobeProps);

@@ -12,6 +12,9 @@ type CaptionPayload = {
   slopePerDecade: number;
   unit: string;
   nMonths: number;
+  comparisonMode?: boolean;
+  regionBName?: string;
+  slopeB?: number;
 };
 
 export async function POST(request: Request) {
@@ -54,9 +57,22 @@ export async function POST(request: Request) {
     baseURL: "https://api.deepseek.com",
   });
 
-  const systemPrompt = `You are a climate science communicator. Generate a two-sentence plain English summary of the provided trend data. Use ONLY the numbers provided. Do not speculate or add information beyond the data given. Be concise and clear.`;
+  const isComparison =
+    payload.comparisonMode === true &&
+    typeof payload.regionBName === "string" &&
+    typeof payload.slopeB === "number";
 
-  const userPrompt = `Region: ${payload.regionName}
+  const systemPrompt = isComparison
+    ? `You are a climate science communicator. Generate a two-sentence plain English summary comparing the two regional trends provided. Use ONLY the numbers provided. Do not speculate or add information beyond the data given. Be concise and clear.`
+    : `You are a climate science communicator. Generate a two-sentence plain English summary of the provided trend data. Use ONLY the numbers provided. Do not speculate or add information beyond the data given. Be concise and clear.`;
+
+  const userPrompt = isComparison
+    ? `Region A: ${payload.regionName} (${payload.slopePerDecade.toFixed(3)} ${payload.unit}/decade, ${payload.direction})
+Region B: ${payload.regionBName} (${payload.slopeB!.toFixed(3)} ${payload.unit}/decade)
+Variable: ${payload.variableLabel}
+Significance: ${payload.significance} (best p-value: ${payload.pValue.toFixed(4)})
+Data span: ${payload.nMonths} months`
+    : `Region: ${payload.regionName}
 Variable: ${payload.variableLabel}
 Direction: ${payload.direction}
 Significance: ${payload.significance}

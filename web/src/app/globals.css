@@ -7,18 +7,39 @@ body {
   height: 100%;
   background: #04090f;
   color: #e7eef7;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
 @layer base {
   * {
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-ink;
   }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display), var(--font-inter), sans-serif;
+  }
 }
 
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: rgb(255 255 255 / 0.15) transparent;
+    scrollbar-color: rgb(255 255 255 / 0.14) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 0.14);
+    border-radius: 999px;
   }
 
   .scrollbar-none {
@@ -43,6 +64,28 @@ body {
     mix-blend-mode: overlay;
   }
 
+  .glass-panel {
+    background: linear-gradient(180deg, rgba(14, 24, 38, 0.86) 0%, rgba(7, 13, 22, 0.92) 100%);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.65), inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+  }
+
+  .glass-pill {
+    background: rgba(11, 19, 30, 0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  .telemetry-card {
+    background: linear-gradient(180deg, rgba(16, 26, 40, 0.65) 0%, rgba(10, 17, 28, 0.8) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  }
+
   .btn-hover {
     @apply transition-all duration-200 ease-out hover:scale-[1.02] hover:brightness-110;
   }
@@ -53,38 +96,6 @@ body {
 
   .card-glow-primary {
     @apply border-primary/55 shadow-glow;
-  }
-}
-
-@layer utilities {
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: rgb(255 255 255 / 0.15) transparent;
-  }
-
-  .scrollbar-none {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-
-  .scrollbar-none::-webkit-scrollbar {
-    display: none;
-  }
-
-  @keyframes pulse-once {
-    0%,
-    100% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.7;
-      transform: scale(1.05);
-    }
-  }
-
-  .animate-pulse-once {
-    animation: pulse-once 0.6s ease-in-out;
   }
 }
 
@@ -104,7 +115,7 @@ body {
   transform: translate(-50%, -100%);
   cursor: pointer;
   user-select: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity 0.18s ease, transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .globe-marker-badge--mode-hidden {
@@ -123,8 +134,8 @@ body {
   flex-wrap: nowrap;
   align-items: baseline;
   gap: 6px;
-  max-width: 11rem;
-  padding: 4px 8px;
+  max-width: 12rem;
+  padding: 5px 9px;
 }
 
 .globe-marker-badge--mode-compact .globe-marker-badge__icon,
@@ -144,12 +155,13 @@ body {
 }
 
 .globe-marker-badge--mode-compact .globe-marker-badge__name {
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .globe-marker-badge--mode-compact .globe-marker-badge__slope {
-  font-size: 10px;
+  font-size: 10.5px;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .globe-marker-badge--selected {
@@ -166,7 +178,7 @@ body {
   height: 0;
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
-  border-top: 8px solid rgb(12 21 32 / 0.95);
+  border-top: 8px solid rgb(10 18 29 / 0.95);
   margin-bottom: -1px;
 }
 
@@ -174,24 +186,25 @@ body {
   display: grid;
   grid-template-columns: auto 1fr;
   grid-template-rows: auto auto;
-  gap: 0 6px;
+  gap: 1px 7px;
   align-items: center;
-  max-width: 9.5rem;
-  padding: 5px 8px 6px;
-  border-radius: 8px;
-  border: 1px solid rgb(255 255 255 / 0.12);
-  background: rgb(8 14 22 / 0.92);
-  box-shadow: 0 4px 14px rgb(0 0 0 / 0.45);
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  line-height: 1.2;
+  max-width: 10.5rem;
+  padding: 6px 9px 7px;
+  border-radius: 9px;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  background: rgb(8 14 23 / 0.92);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.08);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.25;
 }
 
 .globe-marker-badge--significant .globe-marker-badge__body {
-  border-color: rgb(52 211 153 / 0.45);
+  border-color: rgb(52 211 153 / 0.48);
 }
 
 .globe-marker-badge--borderline .globe-marker-badge__body {
-  border-color: rgb(251 191 36 / 0.45);
+  border-color: rgb(251 191 36 / 0.48);
 }
 
 .globe-marker-badge--muted .globe-marker-badge__body {
@@ -199,8 +212,8 @@ body {
 }
 
 .globe-marker-badge--selected .globe-marker-badge__body {
-  border-color: rgb(255 107 74 / 0.55);
-  box-shadow: 0 0 0 1px rgb(255 107 74 / 0.25), 0 6px 18px rgb(0 0 0 / 0.5);
+  border-color: rgb(255 107 74 / 0.65);
+  box-shadow: 0 0 0 1px rgb(255 107 74 / 0.3), 0 8px 24px rgb(0 0 0 / 0.6);
 }
 
 .globe-marker-badge__icon {
@@ -251,7 +264,7 @@ body {
 }
 
 .globe-marker-badge__name {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 600;
   color: rgb(241 245 249);
   white-space: nowrap;
@@ -262,15 +275,16 @@ body {
 
 .globe-marker-badge__slope {
   grid-column: 2;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 11px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: rgb(255 209 196);
 }
 
 .globe-marker-badge__unit {
   grid-column: 2;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 9px;
   color: rgb(100 116 139);
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { TrendFeed } from "@/components/TrendFeed";
@@ -8,11 +9,17 @@ import { SearchBar } from "@/components/SearchBar";
 import { FilterPanel } from "@/components/FilterPanel";
 import { TrendPost } from "@/components/TrendPost";
 import { VariableTabs, variableHeadline } from "@/components/VariableTabs";
+import { PairSelectorModal } from "@/components/PairSelectorModal";
+import { MobileBottomSheet } from "@/components/MobileBottomSheet";
+import { ToastViewport, useToastQueue } from "@/components/Toast";
 import { fetchFeedSummary, fetchSlopes, fetchTrend } from "@/lib/stats";
 import { useTrendFilter } from "@/lib/useTrendFilter";
 import { useCaptionCache } from "@/contexts/CaptionContext";
 import { useContradictionStore } from "@/lib/contradictionStore";
-import { CURATED_CONTRADICTION_PAIRS } from "@/lib/contradictionPairs";
+import {
+  DEFAULT_FEATURED_PAIR_ID,
+  type ContradictionPair,
+} from "@/lib/contradictionPairs";
 import {
   loadBookmarks,
   saveBookmarks,
@@ -20,14 +27,21 @@ import {
   toggleBookmark,
   type Bookmark,
 } from "@/lib/bookmarks";
-import type { Direction, FeedItem, RegionType, Significance, TrendState, VariableId } from "@/lib/types";
+import type {
+  Direction,
+  FeedItem,
+  RegionType,
+  Significance,
+  TrendState,
+  VariableId,
+} from "@/lib/types";
 
 const Globe = dynamic(
   () => import("@/components/Globe").then((mod) => mod.Globe),
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-full w-full items-center justify-center bg-[#04090f] text-xs text-slate-500">
+      <div className="flex h-full w-full items-center justify-center bg-[#04090f] font-mono text-xs text-slate-500">
         Loading globe…
       </div>
     ),
@@ -39,7 +53,7 @@ const SplitGlobe = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-full w-full items-center justify-center bg-[#04090f] text-xs text-slate-500">
+      <div className="flex h-full w-full items-center justify-center bg-[#04090f] font-mono text-xs text-slate-500">
         Loading split view…
       </div>
     ),
@@ -66,8 +80,25 @@ export function HomePageClient() {
   const [hydrated, setHydrated] = useState(false);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
 
-  const { getCaption, isLoading: isCaptionLoading, getError: getCaptionError, fetchCaptionForTrend } = useCaptionCache();
-  const { enabled, pairs, selectedPairId, enable, disable, selectPair, setPairs, loadPairs } = useContradictionStore();
+  const { toasts, pushToast, dismissToast } = useToastQueue();
+
+  const {
+    getCaption,
+    isLoading: isCaptionLoading,
+    getError: getCaptionError,
+    fetchCaptionForTrend,
+  } = useCaptionCache();
+  const {
+    enabled,
+    curatedPairs,
+    livePairs,
+    pairs,
+    selectedPairId,
+    enable,
+    disable,
+    selectPair,
+    setPairsFromApi,
+  } = useContradictionStore();
 
   const {
     filtered,
@@ -100,21 +131,6 @@ export function HomePageClient() {
 
   useEffect(() => {
     setBookmarks(loadBookmarks());
-    setPairs(CURATED_CONTRADICTION_PAIRS);
-    
-    const fetchDynamicPairs = async () => {
-      try {
-        const response = await fetch(`/api/contradiction-pairs?variable=${variable}`);
-        if (response.ok) {
-          const dynamicPairs = await response.json();
-          loadPairs(dynamicPairs);
-        }
-      } catch (error: unknown) {
-        console.error("Failed to load dynamic pairs:", error);
-      }
-    };
-    void fetchDynamicPairs();
-
     const regionParam = searchParams.get("region");
     const variableParam = searchParams.get("variable");
     if (regionParam) {
@@ -124,7 +140,39 @@ export function HomePageClient() {
       setVariable(variableParam);
     }
     setHydrated(true);
-  }, [searchParams, variable, setPairs, loadPairs]);
+  }, [searchParams]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/contradiction-pairs?variable=${encodeURIComponent(variable)}`, {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          return;
+        }
+        const data = (await response.json()) as
+          | { curated?: ContradictionPair[]; live?: ContradictionPair[] }
+          | ContradictionPair[];
+        if (Array.isArray(data)) {
+          const curated = data.filter((p) => p.source !== "live");
+          const live = data.filter((p) => p.source === "live");
+          setPairsFromApi(curated, live);
+        } else {
+          setPairsFromApi(
+            Array.isArray(data.curated) ? data.curated : [],
+            Array.isArray(data.live) ? data.live : [],
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error("Failed to load contradiction pairs:", error);
+      });
+    return () => controller.abort();
+  }, [variable, setPairsFromApi]);
 
   useEffect(() => {
     if (!hydrated) {
@@ -169,7 +217,10 @@ export function HomePageClient() {
         setTrendState({ status: "ready", trend });
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+        if (
+          controller.signal.aborted ||
+          (error instanceof DOMException && error.name === "AbortError")
+        ) {
           return;
         }
         setTrendState({
@@ -191,7 +242,10 @@ export function HomePageClient() {
         setSlopes(next);
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+        if (
+          controller.signal.aborted ||
+          (error instanceof DOMException && error.name === "AbortError")
+        ) {
           return;
         }
         setSlopes({});
@@ -225,7 +279,10 @@ export function HomePageClient() {
     void fetchTrend(pair.regionA.id, variable, controllerA.signal)
       .then((trend) => setTrendStateA({ status: "ready", trend }))
       .catch((error: unknown) => {
-        if (!controllerA.signal.aborted) {
+        if (
+          !controllerA.signal.aborted &&
+          !(error instanceof DOMException && error.name === "AbortError")
+        ) {
           setTrendStateA({
             status: "error",
             message: error instanceof Error ? error.message : "Failed to load trend A",
@@ -236,7 +293,10 @@ export function HomePageClient() {
     void fetchTrend(pair.regionB.id, variable, controllerB.signal)
       .then((trend) => setTrendStateB({ status: "ready", trend }))
       .catch((error: unknown) => {
-        if (!controllerB.signal.aborted) {
+        if (
+          !controllerB.signal.aborted &&
+          !(error instanceof DOMException && error.name === "AbortError")
+        ) {
           setTrendStateB({
             status: "error",
             message: error instanceof Error ? error.message : "Failed to load trend B",
@@ -262,35 +322,44 @@ export function HomePageClient() {
     }
   }, [trendStateB, variable, fetchCaptionForTrend]);
 
-  const handleSignificanceToggle = useCallback((tier: Significance) => {
-    const next = new Set(filterState.significanceTiers);
-    if (next.has(tier)) {
-      next.delete(tier);
-    } else {
-      next.add(tier);
-    }
-    setSignificanceTiers(next);
-  }, [filterState.significanceTiers, setSignificanceTiers]);
+  const handleSignificanceToggle = useCallback(
+    (tier: Significance) => {
+      const next = new Set(filterState.significanceTiers);
+      if (next.has(tier)) {
+        next.delete(tier);
+      } else {
+        next.add(tier);
+      }
+      setSignificanceTiers(next);
+    },
+    [filterState.significanceTiers, setSignificanceTiers],
+  );
 
-  const handleDirectionToggle = useCallback((direction: Direction) => {
-    const next = new Set(filterState.directions);
-    if (next.has(direction)) {
-      next.delete(direction);
-    } else {
-      next.add(direction);
-    }
-    setDirections(next);
-  }, [filterState.directions, setDirections]);
+  const handleDirectionToggle = useCallback(
+    (direction: Direction) => {
+      const next = new Set(filterState.directions);
+      if (next.has(direction)) {
+        next.delete(direction);
+      } else {
+        next.add(direction);
+      }
+      setDirections(next);
+    },
+    [filterState.directions, setDirections],
+  );
 
-  const handleRegionTypeToggle = useCallback((type: RegionType) => {
-    const next = new Set(filterState.regionTypes);
-    if (next.has(type)) {
-      next.delete(type);
-    } else {
-      next.add(type);
-    }
-    setRegionTypes(next);
-  }, [filterState.regionTypes, setRegionTypes]);
+  const handleRegionTypeToggle = useCallback(
+    (type: RegionType) => {
+      const next = new Set(filterState.regionTypes);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      setRegionTypes(next);
+    },
+    [filterState.regionTypes, setRegionTypes],
+  );
 
   const handleBookmarkToggle = useCallback(() => {
     if (!selectedId) {
@@ -320,76 +389,200 @@ export function HomePageClient() {
       disable();
     } else {
       enable();
-      if (pairs.length > 0 && !selectedPairId) {
-        selectPair(pairs[0].id);
+      if (!selectedPairId || !pairs.some((p) => p.id === selectedPairId)) {
+        const defaultPair =
+          pairs.find((p) => p.id === DEFAULT_FEATURED_PAIR_ID) ?? pairs[0];
+        if (defaultPair) {
+          selectPair(defaultPair.id);
+        }
       }
     }
   }, [enabled, pairs, selectedPairId, enable, disable, selectPair]);
 
-  const selectedPair = enabled && selectedPairId ? pairs.find((p) => p.id === selectedPairId) : null;
+  const selectedPair =
+    enabled && selectedPairId ? pairs.find((p) => p.id === selectedPairId) ?? null : null;
+
+  const feedSidebarContent = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 border-b border-white/8">
+        <VariableTabs value={variable} onChange={setVariable} />
+        <SearchBar value={filterState.searchText} onChange={setSearchText} />
+        <FilterPanel
+          significanceTiers={filterState.significanceTiers}
+          directions={filterState.directions}
+          regionTypes={filterState.regionTypes}
+          showClearAll={hasActiveFilters}
+          onClearAll={clearAllFilters}
+          onSignificanceToggle={handleSignificanceToggle}
+          onDirectionToggle={handleDirectionToggle}
+          onRegionTypeToggle={handleRegionTypeToggle}
+        />
+      </div>
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-thin">
+        <TrendFeed
+          items={filtered}
+          loading={feedLoading}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          error={feedError}
+        />
+      </div>
+    </div>
+  );
+
+  const rightDetailsContent = enabled ? (
+    <DuelingPosts
+      stateA={trendStateA}
+      stateB={trendStateB}
+      captionA={
+        trendStateA.status === "ready"
+          ? getCaption(trendStateA.trend, variable)
+          : null
+      }
+      captionB={
+        trendStateB.status === "ready"
+          ? getCaption(trendStateB.trend, variable)
+          : null
+      }
+      loadingA={
+        trendStateA.status === "ready"
+          ? isCaptionLoading(trendStateA.trend, variable)
+          : false
+      }
+      loadingB={
+        trendStateB.status === "ready"
+          ? isCaptionLoading(trendStateB.trend, variable)
+          : false
+      }
+      comparisonReason={selectedPair?.reason}
+      pairTitle={selectedPair?.name}
+      pairSubtitle={selectedPair?.description}
+    />
+  ) : (
+    <TrendPost
+      state={trendState}
+      caption={
+        trendState.status === "ready"
+          ? getCaption(trendState.trend, variable)
+          : null
+      }
+      captionLoading={
+        trendState.status === "ready"
+          ? isCaptionLoading(trendState.trend, variable)
+          : false
+      }
+      captionError={
+        trendState.status === "ready"
+          ? getCaptionError(trendState.trend, variable)
+          : null
+      }
+      isBookmarked={selectedId ? isBookmarked(selectedId, variable, bookmarks) : false}
+      onBookmarkToggle={handleBookmarkToggle}
+      onCopyLink={handleCopyLink}
+      onNotify={pushToast}
+    />
+  );
 
   return (
     <main className="flex h-dvh flex-col bg-ink text-slate-100 animate-fade-in noise-texture">
-      <header className="shrink-0 border-b border-white/10 bg-gradient-to-b from-ink to-ink/95 px-4 py-4 sm:px-5 sm:py-5" role="banner">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex-1">
-            <h1 className="text-heading-sm sm:text-heading-md text-white">Bluegram</h1>
-            <p className="mt-1 text-caption-sm uppercase sm:text-caption-lg sm:uppercase text-slate-400">
-              {enabled ? "Contradiction Detector" : variableHeadline(variable)}
-            </p>
+      {/* Unified Space Telemetry Header */}
+      <header
+        className="relative z-40 shrink-0 border-b border-white/10 bg-[#050b13]/95 px-4 py-3 backdrop-blur-md sm:px-5 sm:py-3.5"
+        role="banner"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3.5">
+            <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-sky-400/30 bg-[#02050a] shadow-[0_0_22px_rgba(56,189,248,0.22)] ring-1 ring-white/10 sm:h-12 sm:w-12">
+              <Image
+                src="/logo.png"
+                alt="Bluegram logo"
+                fill
+                sizes="48px"
+                priority
+                className="object-cover object-[50%_20%] scale-[1.35] transition-transform duration-300 hover:scale-[1.42]"
+              />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="font-display text-lg font-semibold tracking-tight text-white sm:text-xl">
+                  Bluegram
+                </h1>
+              </div>
+              <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-slate-400 sm:text-[11px]">
+                {enabled ? "Contradiction Detector · Dual-Region Telemetry" : variableHeadline(variable)}
+              </p>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={handleContradictionToggle}
-            className={`rounded-lg border px-4 py-2 text-xs font-medium transition-all duration-200 min-h-[44px] sm:min-h-0 ${
-              enabled
-                ? "border-warning/50 bg-warning/15 text-amber-300 hover:scale-105 hover:bg-warning/25"
-                : "border-white/10 bg-white/5 text-slate-300 hover:scale-105 hover:border-white/20 hover:bg-white/10"
-            }`}
-            aria-label={enabled ? "Exit comparison mode" : "Enter comparison mode"}
-            aria-pressed={enabled}
-          >
-            {enabled ? "Exit Comparison" : "Compare Regions"}
-          </button>
-        </div>
-        {enabled && pairs.length > 0 && (
-          <div className="mt-3 animate-slide-in">
-            <label htmlFor="contradiction-pair-select" className="sr-only">
-              Select contradiction pair
-            </label>
-            <select
-              id="contradiction-pair-select"
-              value={selectedPairId || ""}
-              onChange={(e) => selectPair(e.target.value)}
-              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-200 transition-colors hover:border-white/20 focus:border-primary/60"
-              aria-label="Choose region pair to compare"
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {enabled && (
+              <>
+                <VariableTabs value={variable} onChange={setVariable} compact />
+                {pairs.length > 0 && (
+                  <PairSelectorModal
+                    curatedPairs={curatedPairs}
+                    livePairs={livePairs}
+                    selectedPair={selectedPair}
+                    slopes={slopes}
+                    variable={variable}
+                    onSelectPair={selectPair}
+                  />
+                )}
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={handleContradictionToggle}
+              data-agent-action="toggle-compare-regions"
+              className={`rounded-xl border px-3.5 py-2 text-xs font-medium transition-all duration-200 ${
+                enabled
+                  ? "border-amber-400/50 bg-amber-400/15 text-amber-200 hover:bg-amber-400/25"
+                  : "border-white/12 bg-white/[0.06] text-slate-200 hover:border-white/25 hover:bg-white/10"
+              }`}
+              aria-label={enabled ? "Exit comparison mode" : "Compare regions"}
+              aria-pressed={enabled}
             >
-              {pairs.map((pair) => (
-                <option key={pair.id} value={pair.id} className="bg-elevated">
-                  {pair.name}
-                </option>
-              ))}
-            </select>
+              {enabled ? "Exit Comparison" : "Compare Regions"}
+            </button>
           </div>
-        )}
+        </div>
       </header>
+
+      {/* Main Workspace: Canvas-First 2-col in Compare Mode (~62% / ~38%), 3-col in Explore Mode */}
       <div
-        className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto_minmax(14rem,42vh)] lg:grid-cols-[minmax(19rem,24rem)_minmax(0,1fr)_minmax(17rem,26rem)] lg:grid-rows-1"
+        className={`relative flex min-h-0 flex-1 flex-col lg:grid lg:grid-rows-1 ${
+          enabled
+            ? "lg:grid-cols-[minmax(0,1.62fr)_minmax(24rem,1fr)]"
+            : "lg:grid-cols-[minmax(19rem,22.5rem)_minmax(0,1fr)_minmax(21rem,26rem)]"
+        }`}
         role="application"
         aria-label="Earth trends visualization"
       >
-        <section 
-          className="relative min-h-0 border-b border-white/10 lg:order-2 lg:col-start-2 lg:border-b-0" 
+        {/* Left Feed Sidebar (Desktop only, hidden in Canvas-First Compare Mode) */}
+        {!enabled && (
+          <aside
+            className="hidden min-h-0 flex-col overflow-hidden border-r border-white/10 bg-[#060c15]/80 lg:order-1 lg:col-start-1 lg:flex"
+            aria-label="Region feed and filters"
+          >
+            {feedSidebarContent}
+          </aside>
+        )}
+
+        {/* Center 3D Globe / SplitGlobe Canvas */}
+        <section
+          className={`relative min-h-0 flex-1 ${
+            enabled ? "lg:order-1 lg:col-start-1" : "lg:order-2 lg:col-start-2"
+          }`}
           aria-label={enabled ? "Split globe comparison view" : "Interactive globe"}
         >
-          {enabled && selectedPair ? (
-            <SplitGlobe
-              regionA={selectedPair.regionA}
-              regionB={selectedPair.regionB}
-              slopes={slopes}
-              variable={variable}
-            />
-          ) : (
+          <div
+            className={
+              enabled
+                ? "pointer-events-none invisible h-full w-full opacity-0"
+                : "h-full w-full opacity-100 transition-opacity duration-300"
+            }
+          >
             <Globe
               regions={globeRegions}
               slopes={slopes}
@@ -398,105 +591,39 @@ export function HomePageClient() {
               selectedId={selectedId}
               onSelect={setSelectedId}
             />
-          )}
-        </section>
-        <aside
-          className="flex min-h-0 flex-col overflow-hidden border-b border-white/10 lg:order-1 lg:col-start-1 lg:border-b-0 lg:border-r"
-          aria-label={enabled ? "Comparison mode panel" : "Region feed and filters"}
-        >
-          {!enabled && (
-            <>
-              <div className="shrink-0 border-b border-white/5">
-                <VariableTabs value={variable} onChange={setVariable} />
-                <SearchBar value={filterState.searchText} onChange={setSearchText} />
-                <FilterPanel
-                  significanceTiers={filterState.significanceTiers}
-                  directions={filterState.directions}
-                  regionTypes={filterState.regionTypes}
-                  showClearAll={hasActiveFilters}
-                  onClearAll={clearAllFilters}
-                  onSignificanceToggle={handleSignificanceToggle}
-                  onDirectionToggle={handleDirectionToggle}
-                  onRegionTypeToggle={handleRegionTypeToggle}
-                />
-              </div>
-              <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-none">
-                <TrendFeed
-                  items={filtered}
-                  loading={feedLoading}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  error={feedError}
-                />
-              </div>
-            </>
-          )}
-          {enabled && (
-            <div className="flex h-full items-center justify-center p-6 text-center">
-              <div className="animate-fade-in">
-                <p className="text-sm font-medium text-slate-300">Comparison Mode Active</p>
-                <p className="mt-2 max-w-xs text-body-md text-slate-500">
-                  Select a region pair from the dropdown above to compare trends.
-                </p>
-              </div>
+          </div>
+          {enabled && selectedPair && (
+            <div className="absolute inset-0 z-10 animate-fade-in bg-ink">
+              <SplitGlobe
+                regionA={selectedPair.regionA}
+                regionB={selectedPair.regionB}
+                slopes={slopes}
+                variable={variable}
+              />
             </div>
           )}
-        </aside>
-        <aside 
-          className="min-h-0 overflow-hidden lg:order-3 lg:col-start-3 lg:border-l lg:border-white/10" 
+        </section>
+
+        {/* Right Telemetry Drawer (Desktop) */}
+        <aside
+          className={`hidden min-h-0 overflow-hidden border-l border-white/10 bg-[#060c15]/85 lg:block ${
+            enabled ? "lg:order-2 lg:col-start-2" : "lg:order-3 lg:col-start-3"
+          }`}
           aria-label={enabled ? "Dueling trends comparison" : "Selected trend details"}
         >
-          {enabled ? (
-            <DuelingPosts
-              trendA={trendStateA.status === "ready" ? trendStateA.trend : null}
-              trendB={trendStateB.status === "ready" ? trendStateB.trend : null}
-              captionA={
-                trendStateA.status === "ready"
-                  ? getCaption(trendStateA.trend, variable)
-                  : null
-              }
-              captionB={
-                trendStateB.status === "ready"
-                  ? getCaption(trendStateB.trend, variable)
-                  : null
-              }
-              loadingA={
-                trendStateA.status === "ready"
-                  ? isCaptionLoading(trendStateA.trend, variable)
-                  : false
-              }
-              loadingB={
-                trendStateB.status === "ready"
-                  ? isCaptionLoading(trendStateB.trend, variable)
-                  : false
-              }
-              comparisonReason={selectedPair?.reason}
-            />
-          ) : (
-            <TrendPost
-              state={trendState}
-              caption={
-                trendState.status === "ready"
-                  ? getCaption(trendState.trend, variable)
-                  : null
-              }
-              captionLoading={
-                trendState.status === "ready"
-                  ? isCaptionLoading(trendState.trend, variable)
-                  : false
-              }
-              captionError={
-                trendState.status === "ready"
-                  ? getCaptionError(trendState.trend, variable)
-                  : null
-              }
-              isBookmarked={selectedId ? isBookmarked(selectedId, variable, bookmarks) : false}
-              onBookmarkToggle={handleBookmarkToggle}
-              onCopyLink={handleCopyLink}
-            />
-          )}
+          {rightDetailsContent}
         </aside>
+
+        {/* Mobile Bottom Sheet (< lg viewports) */}
+        <MobileBottomSheet
+          compareEnabled={enabled}
+          hasSelectedRegion={Boolean(selectedId)}
+          feedContent={feedSidebarContent}
+          detailsContent={rightDetailsContent}
+        />
       </div>
+
+      <ToastViewport toasts={toasts} onDismiss={dismissToast} />
     </main>
   );
 }

@@ -11,22 +11,81 @@ type IPFSUploadError = {
   error: string;
 };
 
-const uploadCache = new Map<string, string>();
+type StoredCidEntry = {
+  cid: string;
+  gateway_url: string;
+  timestamp: string;
+};
 
-function getCacheKey(trend: TrendResponse): string {
-  return `${trend.region.id}:${trend.variable}:${trend.nMonths}`;
+const STORAGE_KEY = "bluegram:ipfs-cids";
+const uploadCache = new Map<string, StoredCidEntry>();
+let hydrated = false;
+
+function getCacheKey(trend: Pick<TrendResponse, "region" | "variable">): string {
+  return `${trend.region.id}:${trend.variable}`;
+}
+
+function hydrateFromStorage(): void {
+  if (hydrated || typeof window === "undefined") {
+    return;
+  }
+  hydrated = true;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    const parsed = JSON.parse(raw) as Record<string, StoredCidEntry | string>;
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "string" && value.length > 0) {
+        uploadCache.set(key, {
+          cid: value,
+          gateway_url: getGatewayURL(value),
+          timestamp: "",
+        });
+      } else if (
+        value &&
+        typeof value === "object" &&
+        typeof value.cid === "string" &&
+        value.cid.length > 0
+      ) {
+        uploadCache.set(key, {
+          cid: value.cid,
+          gateway_url: value.gateway_url || getGatewayURL(value.cid),
+          timestamp: value.timestamp || "",
+        });
+      }
+    }
+  } catch {
+    // Ignore localStorage parse errors
+  }
+}
+
+function persistToStorage(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    const serializable: Record<string, StoredCidEntry> = {};
+    for (const [key, entry] of uploadCache.entries()) {
+      serializable[key] = entry;
+    }
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
+  } catch {
+    // Ignore localStorage quota/security errors
+  }
 }
 
 export async function uploadTrendToIPFS(trend: TrendResponse): Promise<IPFSUploadResponse> {
+  hydrateFromStorage();
   const cacheKey = getCacheKey(trend);
   const cached = uploadCache.get(cacheKey);
-  
+
   if (cached) {
-    const [cid, gateway_url, timestamp] = cached.split("|");
     return {
-      cid,
-      gateway_url,
-      timestamp,
+      cid: cached.cid,
+      gateway_url: cached.gateway_url,
+      timestamp: cached.timestamp,
       size: 0,
     };
   }
@@ -75,20 +134,21 @@ export async function uploadTrendToIPFS(trend: TrendResponse): Promise<IPFSUploa
   }
 
   const data: IPFSUploadResponse = await response.json();
-  
-  uploadCache.set(cacheKey, `${data.cid}|${data.gateway_url}|${data.timestamp}`);
+
+  uploadCache.set(cacheKey, {
+    cid: data.cid,
+    gateway_url: data.gateway_url,
+    timestamp: data.timestamp,
+  });
+  persistToStorage();
 
   return data;
 }
 
-export function getCachedCID(trend: TrendResponse): string | null {
+export function getCachedCID(trend: Pick<TrendResponse, "region" | "variable">): string | null {
+  hydrateFromStorage();
   const cacheKey = getCacheKey(trend);
-  const cached = uploadCache.get(cacheKey);
-  if (cached) {
-    const [cid] = cached.split("|");
-    return cid;
-  }
-  return null;
+  return uploadCache.get(cacheKey)?.cid ?? null;
 }
 
 export function getGatewayURL(cid: string): string {

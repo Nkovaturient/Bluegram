@@ -1,24 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { TrendMiniChart } from "@/components/TrendMiniChart";
+import { TrendPostSkeleton } from "@/components/TrendPostSkeleton";
+import type { ToastVariant } from "@/components/Toast";
+import { uploadTrendToIPFS, getCachedCID, getGatewayURL, getIPFSProtocolURL } from "@/lib/ipfs";
 import {
   directionLabel,
+  formatCoord,
   formatPValue,
   significanceClass,
   significanceLabel,
   significanceMark,
 } from "@/lib/labels";
-import { TrendPostSkeleton } from "@/components/TrendPostSkeleton";
-import { uploadTrendToIPFS, getCachedCID, getGatewayURL, getIPFSProtocolURL } from "@/lib/ipfs";
+import { getVariablePalette } from "@/lib/variableMeta";
 import type { TrendState } from "@/lib/types";
 
 type TrendPostProps = {
@@ -29,6 +24,7 @@ type TrendPostProps = {
   isBookmarked?: boolean;
   onBookmarkToggle?: () => void;
   onCopyLink?: () => void | Promise<boolean>;
+  onNotify?: (message: string, variant?: ToastVariant) => void;
 };
 
 export function TrendPost({
@@ -39,15 +35,18 @@ export function TrendPost({
   isBookmarked,
   onBookmarkToggle,
   onCopyLink,
+  onNotify,
 }: TrendPostProps) {
   switch (state.status) {
     case "idle":
       return (
         <section className="flex h-full flex-col items-center justify-center gap-3 px-6 py-10 text-center">
-          <p className="text-sm font-medium text-slate-300">No region selected</p>
-          <p className="max-w-[16rem] text-sm leading-relaxed text-slate-500">
-            Choose a marker on the globe or a region in the list to load a NASA POWER trend and
-            significance verdict.
+          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] font-mono text-xs text-slate-400">
+            ◎
+          </div>
+          <p className="font-display text-sm font-medium text-slate-200">No region selected</p>
+          <p className="max-w-[16rem] text-xs leading-relaxed text-slate-400">
+            Select a pin on the 3D globe or a region from the left feed to inspect its NASA POWER trend and Mann–Kendall significance verdict.
           </p>
         </section>
       );
@@ -56,7 +55,7 @@ export function TrendPost({
     case "error":
       return (
         <section className="p-6">
-          <p className="text-xs uppercase tracking-[0.16em] text-red-300/80">NASA POWER</p>
+          <p className="font-mono text-xs uppercase tracking-[0.16em] text-red-300/80">NASA POWER</p>
           <p className="mt-3 text-sm leading-6 text-red-200">{state.message}</p>
         </section>
       );
@@ -70,6 +69,7 @@ export function TrendPost({
           isBookmarked={isBookmarked}
           onBookmarkToggle={onBookmarkToggle}
           onCopyLink={onCopyLink}
+          onNotify={onNotify}
         />
       );
     default: {
@@ -87,6 +87,7 @@ function ReadyPost({
   isBookmarked,
   onBookmarkToggle,
   onCopyLink,
+  onNotify,
 }: {
   state: Extract<TrendState, { status: "ready" }>;
   caption?: string | null;
@@ -95,12 +96,18 @@ function ReadyPost({
   isBookmarked?: boolean;
   onBookmarkToggle?: () => void;
   onCopyLink?: () => void | Promise<boolean>;
+  onNotify?: (message: string, variant?: ToastVariant) => void;
 }) {
   const [copySuccess, setCopySuccess] = useState(false);
   const [ipfsUploading, setIpfsUploading] = useState(false);
   const [ipfsError, setIpfsError] = useState<string | null>(null);
   const [ipfsCID, setIpfsCID] = useState<string | null>(() => getCachedCID(state.trend));
   const [cidCopied, setCidCopied] = useState(false);
+
+  useEffect(() => {
+    setIpfsCID(getCachedCID(state.trend));
+    setIpfsError(null);
+  }, [state.trend]);
 
   useEffect(() => {
     if (!copySuccess) {
@@ -125,7 +132,24 @@ function ReadyPost({
     const result = await onCopyLink();
     if (result === true) {
       setCopySuccess(true);
+      onNotify?.("Shareable region link copied to clipboard", "success");
+    } else {
+      onNotify?.("Could not copy share link", "error");
     }
+  };
+
+  const handleBookmarkClick = () => {
+    if (!onBookmarkToggle) {
+      return;
+    }
+    const nextState = !isBookmarked;
+    onBookmarkToggle();
+    onNotify?.(
+      nextState
+        ? `Saved ${state.trend.region.name} (${state.trend.variableLabel})`
+        : `Removed ${state.trend.region.name} from bookmarks`,
+      "info",
+    );
   };
 
   const handleIPFSUpload = async () => {
@@ -139,8 +163,11 @@ function ReadyPost({
     try {
       const result = await uploadTrendToIPFS(state.trend);
       setIpfsCID(result.cid);
+      onNotify?.(`Trend JSON pinned to IPFS (${result.cid.slice(0, 10)}…)`, "success");
     } catch (error: unknown) {
-      setIpfsError(error instanceof Error ? error.message : "Upload failed");
+      const msg = error instanceof Error ? error.message : "Upload failed";
+      setIpfsError(msg);
+      onNotify?.(msg, "error");
     } finally {
       setIpfsUploading(false);
     }
@@ -153,42 +180,102 @@ function ReadyPost({
     try {
       await navigator.clipboard.writeText(ipfsCID);
       setCidCopied(true);
+      onNotify?.("IPFS CID copied to clipboard", "success");
     } catch (error: unknown) {
       console.error("Failed to copy CID:", error);
+      onNotify?.("Failed to copy CID", "error");
     }
   };
 
   const { trend } = state;
-  const lineByYear = new Map(trend.slopeLine.map((point) => [point.year, point.value]));
-  const rows = trend.annual.map((point) => ({
-    year: point.year,
-    temperature: point.value,
-    trend: lineByYear.get(point.year) ?? null,
-  }));
+  const palette = getVariablePalette(trend.variable);
   const first = trend.series[0]?.date;
   const last = trend.series[trend.series.length - 1]?.date;
   const slopeText = `${trend.slopePerDecade >= 0 ? "+" : ""}${trend.slopePerDecade.toFixed(3)} ${trend.unit} / decade`;
 
+  const jsonLdSchema = {
+    "@context": "https://schema.org",
+    "@type": "Dataset",
+    name: `Bluegram ${trend.region.name} ${trend.variableLabel} Trend (1981–2025)`,
+    description:
+      caption ??
+      `Mann-Kendall trend analysis of NASA POWER ${trend.variableLabel} at ${trend.region.name}: ${slopeText} (p = ${trend.pValue.toFixed(4)}, ${trend.significance}).`,
+    creator: {
+      "@type": "Organization",
+      name: "NASA POWER / Bluegram",
+      url: "https://power.larc.nasa.gov/",
+    },
+    temporalCoverage: first && last ? `${first}/${last}` : "1981-01/2025-12",
+    spatialCoverage: {
+      "@type": "Place",
+      name: trend.region.name,
+      geo: {
+        "@type": "GeoCoordinates",
+        latitude: trend.region.latitude,
+        longitude: trend.region.longitude,
+      },
+    },
+    variableMeasured: [
+      {
+        "@type": "PropertyValue",
+        name: trend.variableLabel,
+        propertyID: palette.parameterCode,
+        unitText: `${trend.unit}/decade`,
+        value: trend.slopePerDecade,
+      },
+      {
+        "@type": "PropertyValue",
+        name: "Mann-Kendall p-value",
+        value: trend.pValue,
+      },
+    ],
+    ...(ipfsCID ? { identifier: `ipfs://${ipfsCID}` } : {}),
+  };
+
   return (
-    <article className="flex h-full flex-col gap-5 overflow-y-auto p-5 lg:p-6">
+    <article
+      className="flex h-full flex-col gap-5 overflow-y-auto p-5 scrollbar-thin lg:p-6"
+      data-region-id={trend.region.id}
+      data-variable={trend.variable}
+    >
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdSchema) }}
+      />
       <header>
         <div className="flex items-start justify-between gap-2">
-          <div className="flex-1">
-            <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Trend post</p>
-            <h2 className="mt-2 text-2xl font-medium text-white">{trend.region.name}</h2>
-            <p className="mt-1 text-sm text-slate-300">
-              {trend.variableLabel}
-              <span className="text-slate-500"> · {trend.variable}</span>
-            </p>
-            <p className="mt-3 text-sm text-[#ffb199]">{directionLabel(trend.direction)}</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Telemetry Post
+              </p>
+              <span className="font-mono text-[10px] text-slate-500">
+                {formatCoord(trend.region.latitude, trend.region.longitude)}
+              </span>
+            </div>
+            <h2 className="mt-1.5 font-display text-2xl font-semibold tracking-tight text-white">
+              {trend.region.name}
+            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center rounded-pill border px-2.5 py-0.5 font-mono text-[11px] font-medium ${palette.badgeClass}`}
+              >
+                {trend.variableLabel} · {palette.parameterCode}
+              </span>
+              <span className={`text-xs font-medium ${palette.textAccentClass}`}>
+                {directionLabel(trend.direction)}
+              </span>
+            </div>
           </div>
           <div className="flex gap-2">
             {onBookmarkToggle && (
               <button
                 type="button"
-                onClick={onBookmarkToggle}
+                onClick={handleBookmarkClick}
+                data-agent-action="toggle-bookmark"
                 className="rounded-lg border border-white/10 bg-white/5 p-2 transition-colors hover:border-white/20 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff6b4a]/60"
                 aria-label={isBookmarked ? "Remove bookmark" : "Bookmark"}
+                aria-pressed={isBookmarked}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -208,6 +295,7 @@ function ReadyPost({
               <button
                 type="button"
                 onClick={() => void handleCopyClick()}
+                data-agent-action="copy-share-link"
                 className={`rounded-lg border border-white/10 bg-white/5 p-2 transition-colors hover:border-white/20 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff6b4a]/60 ${
                   copySuccess ? "trend-post-copy--success" : ""
                 }`}
@@ -246,87 +334,35 @@ function ReadyPost({
           </div>
         </div>
       </header>
-      {rows.length === 0 ? (
-        <p className="text-sm text-red-200">The stats service returned no annual means to chart.</p>
-      ) : (
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid stroke="#163044" vertical={false} />
-              <XAxis
-                dataKey="year"
-                stroke="#8aa0b8"
-                tick={{ fill: "#8aa0b8", fontSize: 11 }}
-                interval={4}
-              />
-              <YAxis
-                stroke="#8aa0b8"
-                tick={{ fill: "#8aa0b8", fontSize: 11 }}
-                width={42}
-                domain={["auto", "auto"]}
-                tickFormatter={(value: number) => value.toFixed(0)}
-              />
-              <Tooltip
-                contentStyle={{
-                  background: "#0c1520",
-                  border: "1px solid #1c2a3a",
-                  borderRadius: 8,
-                  fontSize: 12,
-                }}
-                labelStyle={{ color: "#e7eef7" }}
-                formatter={(value, name) => {
-                  const numeric = typeof value === "number" ? value : Number(value);
-                  const label = name === "trend" ? "Sen slope" : "Annual mean";
-                  if (!Number.isFinite(numeric)) {
-                    return ["—", label];
-                  }
-                  return [`${numeric.toFixed(2)} ${trend.unit}`, label];
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="temperature"
-                name="temperature"
-                stroke="#ff7a59"
-                dot={false}
-                strokeWidth={2}
-              />
-              <Line
-                type="monotone"
-                dataKey="trend"
-                name="trend"
-                stroke="#f4e1c1"
-                dot={false}
-                strokeWidth={1.5}
-                strokeDasharray="5 4"
-                connectNulls
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-      <p className="text-xs text-slate-500">
-        Annual means of monthly {trend.variableLabel.toLowerCase()}. Dashed line is the Sen slope.
-      </p>
-      <div className="mt-auto space-y-3">
-        <p className="font-mono text-lg text-white">{slopeText}</p>
-        <p
-          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs ${significanceClass(trend.significance)}`}
-        >
-          <span>{significanceMark(trend.significance)}</span>
-          <span>
-            {significanceLabel(trend.significance)} · p = {formatPValue(trend.pValue)}
-          </span>
+
+      <div className="rounded-2xl border border-white/[0.08] bg-[#060c14]/75 p-3">
+        <TrendMiniChart trend={trend} heightClassName="h-56" />
+        <p className="mt-2 font-mono text-[11px] text-slate-500">
+          Annual means of monthly {trend.variableLabel.toLowerCase()} · Dashed line = Theil–Sen slope
         </p>
-        <p className="font-mono text-xs text-slate-400">
-          {trend.nMonths} months
-          {first && last ? ` · ${first} – ${last}` : ""}
-        </p>
-        <p className="text-xs text-slate-500">NASA POWER · {trend.dataSource}</p>
       </div>
+
+      <div className="telemetry-card space-y-2.5 rounded-2xl p-4">
+        <p className="font-mono text-lg font-semibold tabular-nums text-white">{slopeText}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p
+            className={`inline-flex items-center gap-2 rounded-pill border px-3 py-1 font-mono text-xs tabular-nums ${significanceClass(trend.significance)}`}
+          >
+            <span>{significanceMark(trend.significance)}</span>
+            <span>
+              {significanceLabel(trend.significance)} · p = {formatPValue(trend.pValue)}
+            </span>
+          </p>
+        </div>
+        <p className="font-mono text-xs tabular-nums text-slate-400">
+          {trend.nMonths} months
+          {first && last ? ` · ${first} – ${last}` : ""} · NASA POWER ({trend.dataSource})
+        </p>
+      </div>
+
       <footer className="border-t border-white/10 pt-4">
-        <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
-          AI Summary
+        <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+          AI Plain-Language Synthesis
         </p>
         {captionLoading ? (
           <div className="space-y-2">
@@ -336,21 +372,23 @@ function ReadyPost({
         ) : captionError ? (
           <p className="text-xs italic text-slate-500">{captionError}</p>
         ) : caption ? (
-          <p className="text-sm leading-relaxed text-slate-300">{caption}</p>
+          <p className="text-sm leading-relaxed text-slate-200">{caption}</p>
         ) : (
           <p className="text-xs italic text-slate-500">No summary available</p>
         )}
       </footer>
-      <footer className="space-y-3 border-t border-white/10 pt-4">
-        <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
-          Verifiable Science
+
+      <footer className="mt-auto space-y-3 border-t border-white/10 pt-4">
+        <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+          Verifiable Science (IPFS)
         </p>
         {!ipfsCID ? (
           <button
             type="button"
             onClick={() => void handleIPFSUpload()}
             disabled={ipfsUploading}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium transition-colors hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff6b4a]/60"
+            data-agent-action="verify-on-ipfs"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium transition-colors hover:border-white/20 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff6b4a]/60"
           >
             {ipfsUploading ? (
               <>
@@ -397,14 +435,14 @@ function ReadyPost({
             )}
           </button>
         ) : (
-          <div className="space-y-2 rounded-lg border border-emerald-400/30 bg-emerald-400/5 p-3">
+          <div className="space-y-2 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-3">
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 overflow-hidden">
                 <p className="text-xs font-medium text-emerald-400">
                   Stored on IPFS
                 </p>
                 <p className="mt-1.5 break-all font-mono text-[11px] text-slate-300">
-                  {ipfsCID}
+                  Verifiable science: ipfs://{ipfsCID}
                 </p>
               </div>
               <button
@@ -454,7 +492,10 @@ function ReadyPost({
               </a>
               <button
                 type="button"
-                onClick={() => void navigator.clipboard.writeText(getIPFSProtocolURL(ipfsCID))}
+                onClick={() => {
+                  void navigator.clipboard.writeText(getIPFSProtocolURL(ipfsCID));
+                  onNotify?.("Copied ipfs:// protocol URI", "success");
+                }}
                 className="flex-1 rounded-md bg-white/5 px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#ff6b4a]/60"
               >
                 Copy ipfs://
