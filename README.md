@@ -128,9 +128,28 @@ Share example: `http://localhost:3000/?region=arctic&variable=temperature`
 | --- | --- | --- |
 | `NEXT_PUBLIC_STATS_URL` | Yes | Stats API base URL (e.g. `http://localhost:8000`) |
 | `DEEPSEEK_API_KEY` | No | Enables AI captions |
-| `PINATA_JWT` | No | Enables IPFS upload |
+| `PINATA_JWT` | No | Enables IPFS upload via Pinata `pinJSONToIPFS` (JWT only — create at `pinata.cloud` → API Keys → New Key and copy the JWT; separate API Key/Secret are not required) |
 
 See [`web/.env.example`](web/.env.example).
+
+## API & Agent-Ready Contracts
+
+Bluegram is designed for both human scientists/explorers and AI agents:
+
+- **Stable URL State:** `/?region=<regionId>&variable=<temperature|precipitation>`
+- **Semantic Landmarks & Action Attributes:** Primary controls expose `data-agent-action` attributes (`toggle-compare-regions`, `select-contradiction-pair`, `select-variable-temperature`, `select-variable-precipitation`, `verify-on-ipfs`, `copy-share-link`, `toggle-bookmark`) and explicit ARIA roles.
+- **Embedded JSON-LD (`https://schema.org/Dataset`):** Every active `TrendPost` embeds a `<script type="application/ld+json">` payload with region `GeoCoordinates`, `temporalCoverage` (`1981-01/2025-12`), `variableMeasured` (Sen's slope per decade + Mann–Kendall p-value), and `identifier` (`ipfs://<cid>` when pinned).
+
+### HTTP Endpoints
+
+| Endpoint | Method | Service | Description |
+| --- | --- | --- | --- |
+| `/api/regions` | `GET` | Python (`:8000`) | Returns `{ regions: [{ id, name, latitude, longitude }] }` for the 10 canonical NASA POWER regions. |
+| `/api/trend?region={id}&variable={var}` | `GET` | Python (`:8000`) | Runs Mann–Kendall & Theil–Sen on monthly NASA POWER series; returns `{ region, variable, unit, direction, significance, pValue, slopePerDecade, series, annual, slopeLine }`. |
+| `/api/trends?variable={var}` | `GET` | Python (`:8000`) | Batch summary across all 10 regions: `{ variable, points: [{ regionId, slopePerDecade, pValue, significance, direction }] }`. |
+| `/api/contradiction-pairs?variable={var}` | `GET` | Next.js (`:3000`) | Returns `{ curated: ContradictionPair[], live: ContradictionPair[] }` combining curated pairs with live opposing-slope pairs (`p < 0.05`). |
+| `/api/caption` | `POST` | Next.js (`:3000`) | Generates a 2-sentence plain-English synthesis via DeepSeek (`comparisonMode`, `regionBName`, `slopeB` supported for dual-region contrast). |
+| `/api/ipfs` | `POST` | Next.js (`:3000`) | Pins a `TrendPost` JSON payload to IPFS via Pinata `pinJSONToIPFS` (`PINATA_JWT`) and returns `{ cid, gateway_url, timestamp, size }`. |
 
 ## Project structure
 
