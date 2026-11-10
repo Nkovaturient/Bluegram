@@ -1,7 +1,4 @@
-"""Monthly trend: short-gap fill, deseasonalize, Mann-Kendall, Sen slope.
-
-Uses pymannkendall.original_test.
-"""
+"""Monthly trend: short-gap fill, deseasonalize, Mann-Kendall, Sen slope, and Benjamini-Hochberg FDR."""
 
 import math
 from dataclasses import dataclass
@@ -15,6 +12,7 @@ from variables import VariableSpec
 
 MIN_USABLE_MONTHS = 20 * 12
 SHORT_GAP_MONTHS = 3
+MAX_MISSING_RATIO = 0.20
 
 
 class SeriesRejected(Exception):
@@ -28,9 +26,37 @@ class MonthPoint:
     value: float | None
 
 
-def compute_trend(region: Region, series: PowerSeries, variable: VariableSpec) -> dict[str, object]:
+def compute_fdr_qvalues(p_values: dict[str, float]) -> dict[str, float]:
+    """Benjamini-Hochberg (1995) step-up FDR q-value calculation across spatial regions."""
+    n = len(p_values)
+    if n == 0:
+        return {}
+    sorted_items = sorted(p_values.items(), key=lambda item: item[1])
+    raw_q: list[tuple[str, float]] = []
+    for rank_idx, (region_id, p_val) in enumerate(sorted_items, start=1):
+        raw_q.append((region_id, (p_val * n) / rank_idx))
+
+    q_values: dict[str, float] = {}
+    running_min = 1.0
+    for region_id, q_val in reversed(raw_q):
+        running_min = min(running_min, q_val, 1.0)
+        q_values[region_id] = running_min
+    return q_values
+
+
+def compute_trend(
+    region: Region,
+    series: PowerSeries,
+    variable: VariableSpec,
+    q_value: float | None = None,
+) -> dict[str, object]:
     observed = _observed_months(series)
+    total_months = len(observed)
     usable = [point for point in observed if point.value is not None]
+    missing_ratio = (
+        max(0.0, (total_months - len(usable)) / total_months) if total_months > 0 else 1.0
+    )
+
     if len(usable) < MIN_USABLE_MONTHS:
         raise SeriesRejected(
             f"Fewer than 20 years of usable months ({len(usable)} after dropping fill values)"
@@ -71,6 +97,13 @@ def compute_trend(region: Region, series: PowerSeries, variable: VariableSpec) -
     annual = _annual_means(usable)
     if len(annual) == 0:
         raise SeriesRejected("Observed series produced no annual means")
+
+    significance = (
+        "insufficient_data"
+        if missing_ratio > MAX_MISSING_RATIO
+        else _significance(p_value)
+    )
+
     return {
         "region": {
             "id": region.id,
@@ -84,8 +117,10 @@ def compute_trend(region: Region, series: PowerSeries, variable: VariableSpec) -
         "units": series.units,
         "dataSource": "nasa",
         "direction": _direction(slope_per_year),
-        "significance": _significance(p_value),
+        "significance": significance,
         "pValue": p_value,
+        "qValue": q_value if q_value is not None else p_value,
+        "missingRatio": round(missing_ratio, 4),
         "slopePerYear": slope_per_year,
         "slopePerDecade": slope_per_year * 10.0,
         "nMonths": len(chart_series),

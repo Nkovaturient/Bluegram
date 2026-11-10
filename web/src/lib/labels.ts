@@ -23,6 +23,8 @@ export function significanceLabel(significance: Significance): string {
       return "Borderline";
     case "not_significant":
       return "Not significant";
+    case "insufficient_data":
+      return "Insufficient data";
     default: {
       const exhaustive: never = significance;
       return exhaustive;
@@ -38,6 +40,8 @@ export function significanceMark(significance: Significance): string {
       return "⚠";
     case "not_significant":
       return "–";
+    case "insufficient_data":
+      return "∅";
     default: {
       const exhaustive: never = significance;
       return exhaustive;
@@ -53,6 +57,8 @@ export function significanceClass(significance: Significance): string {
       return "border-amber-400/40 bg-amber-400/10 text-amber-200";
     case "not_significant":
       return "border-slate-400/30 bg-slate-400/10 text-slate-300";
+    case "insufficient_data":
+      return "border-purple-400/35 bg-purple-400/10 text-purple-200";
     default: {
       const exhaustive: never = significance;
       return exhaustive;

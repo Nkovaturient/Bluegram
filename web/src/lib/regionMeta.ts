@@ -11,6 +11,9 @@ export const REGION_TYPE_MAP: Record<string, RegionType> = {
   "gulf-of-mexico": "temperate",
   siberia: "temperate",
   "sw-usa": "arid",
+  "western-ghats": "tropical",
+  "indo-gangetic": "temperate",
+  sundarbans: "tropical",
 };
 
 export function getRegionType(regionId: string): RegionType | null {

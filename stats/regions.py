@@ -1,7 +1,4 @@
-"""Fixed Phase 1 regions.
-
-NASA POWER monthly T2M for 1981–2025 is complete at each point (no fill), so none of these coordinates were moved.
-"""
+"""Canonical Bluegram regions (10 global core + 3 Indian subcontinent / ISRO focus regions)."""
 
 from dataclasses import dataclass
 
@@ -25,6 +22,9 @@ REGIONS: tuple[Region, ...] = (
     Region("gulf-of-mexico", "Gulf of Mexico", 25.0, -90.0),
     Region("siberia", "Siberia", 62.0, 100.0),
     Region("sw-usa", "SW USA", 34.0, -112.0),
+    Region("western-ghats", "Western Ghats", 13.5, 75.5),
+    Region("indo-gangetic", "Indo-Gangetic Plain", 26.8, 80.9),
+    Region("sundarbans", "Sundarbans Delta", 21.9, 89.2),
 )
 
 BY_ID: dict[str, Region] = {region.id: region for region in REGIONS}

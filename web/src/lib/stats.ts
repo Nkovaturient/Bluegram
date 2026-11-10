@@ -1,11 +1,13 @@
 import type {
   AnnualPoint,
   Direction,
+  EonetEvent,
   FeedItem,
   Region,
   SeriesPoint,
   Significance,
   SlopePoint,
+  SupplementalInfo,
   TrendResponse,
   VariableId,
 } from "@/lib/types";
@@ -28,7 +30,11 @@ export async function fetchRegions(signal: AbortSignal): Promise<Region[]> {
     throw new Error(await readError(response));
   }
   const body: unknown = await response.json();
-  if (typeof body !== "object" || body === null || !Array.isArray((body as { regions?: unknown }).regions)) {
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !Array.isArray((body as { regions?: unknown }).regions)
+  ) {
     throw new Error("Stats service returned an unexpected region list");
   }
   const regions: Region[] = [];
@@ -70,7 +76,10 @@ export async function fetchTrend(
   return trend;
 }
 
-export async function fetchSlopes(variable: VariableId, signal: AbortSignal): Promise<SlopePoint[]> {
+export async function fetchSlopes(
+  variable: VariableId,
+  signal: AbortSignal,
+): Promise<SlopePoint[]> {
   const url = `${statsBaseUrl()}/api/trends?variable=${encodeURIComponent(variable)}`;
   let response: Response;
   try {
@@ -85,7 +94,11 @@ export async function fetchSlopes(variable: VariableId, signal: AbortSignal): Pr
     throw new Error(await readError(response));
   }
   const body: unknown = await response.json();
-  if (typeof body !== "object" || body === null || !Array.isArray((body as { points?: unknown }).points)) {
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !Array.isArray((body as { points?: unknown }).points)
+  ) {
     throw new Error("Stats service returned an unexpected slope list");
   }
   const slopes: SlopePoint[] = [];
@@ -95,17 +108,24 @@ export async function fetchSlopes(variable: VariableId, signal: AbortSignal): Pr
     }
     const regionId = (item as { regionId?: unknown }).regionId;
     const slopePerDecade = (item as { slopePerDecade?: unknown }).slopePerDecade;
-    if (typeof regionId === "string" && typeof slopePerDecade === "number" && Number.isFinite(slopePerDecade)) {
+    if (
+      typeof regionId === "string" &&
+      typeof slopePerDecade === "number" &&
+      Number.isFinite(slopePerDecade)
+    ) {
       slopes.push({ regionId, slopePerDecade });
     }
   }
   return slopes;
 }
 
-export async function fetchFeedSummary(variable: VariableId, signal: AbortSignal): Promise<FeedItem[]> {
+export async function fetchFeedSummary(
+  variable: VariableId,
+  signal: AbortSignal,
+): Promise<FeedItem[]> {
   const regions = await fetchRegions(signal);
   const regionMap = new Map(regions.map((r) => [r.id, r]));
-  
+
   const url = `${statsBaseUrl()}/api/trends?variable=${encodeURIComponent(variable)}`;
   let response: Response;
   try {
@@ -128,8 +148,9 @@ export async function fetchFeedSummary(variable: VariableId, signal: AbortSignal
     throw new Error("Stats service returned an unexpected feed summary");
   }
   const record = body as { variable?: unknown; points: unknown[] };
-  const variableLabel = typeof record.variable === "string" ? getVariableLabel(record.variable) : variable;
-  
+  const variableLabel =
+    typeof record.variable === "string" ? getVariableLabel(record.variable) : variable;
+
   const items: FeedItem[] = [];
   for (const item of record.points) {
     const feedItem = readFeedItem(item, regionMap, variableLabel);
@@ -152,6 +173,10 @@ function getVariableLabel(variableId: string): string {
       return "Temperature";
     case "precipitation":
       return "Precipitation";
+    case "solar":
+      return "Solar radiation";
+    case "humidity":
+      return "Relative humidity";
     default:
       return variableId;
   }
@@ -160,7 +185,7 @@ function getVariableLabel(variableId: string): string {
 function readFeedItem(
   value: unknown,
   regionMap: Map<string, Region>,
-  variableLabel: string
+  variableLabel: string,
 ): FeedItem | null {
   if (typeof value !== "object" || value === null) {
     return null;
@@ -188,11 +213,16 @@ function readFeedItem(
   ) {
     return null;
   }
+  const qValue =
+    typeof record.qValue === "number" && Number.isFinite(record.qValue)
+      ? record.qValue
+      : undefined;
   return {
     region,
     regionType: getRegionType(region.id),
     slopePerDecade: record.slopePerDecade,
     pValue: record.pValue,
+    qValue,
     direction,
     significance,
     unit: record.unit,
@@ -203,7 +233,11 @@ function readFeedItem(
 async function readError(response: Response): Promise<string> {
   try {
     const body: unknown = await response.json();
-    if (typeof body === "object" && body !== null && typeof (body as { detail?: unknown }).detail === "string") {
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      typeof (body as { detail?: unknown }).detail === "string"
+    ) {
       return (body as { detail: string }).detail;
     }
   } catch {
@@ -260,6 +294,16 @@ function readTrend(value: unknown): TrendResponse | null {
   ) {
     return null;
   }
+
+  const qValue =
+    typeof record.qValue === "number" && Number.isFinite(record.qValue)
+      ? record.qValue
+      : undefined;
+  const missingRatio =
+    typeof record.missingRatio === "number" && Number.isFinite(record.missingRatio)
+      ? record.missingRatio
+      : undefined;
+
   return {
     region,
     variable: record.variable,
@@ -270,6 +314,8 @@ function readTrend(value: unknown): TrendResponse | null {
     direction,
     significance,
     pValue: record.pValue,
+    qValue,
+    missingRatio,
     slopePerYear: record.slopePerYear,
     slopePerDecade: record.slopePerDecade,
     nMonths: record.nMonths,
@@ -277,6 +323,60 @@ function readTrend(value: unknown): TrendResponse | null {
     series: readSeries(record.series),
     annual: readAnnual(record.annual),
     slopeLine: readAnnual(record.slopeLine),
+    events: readEvents(record.events),
+    supplemental: readSupplemental(record.supplemental),
+  };
+}
+
+function readEvents(value: unknown): EonetEvent[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const list: EonetEvent[] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) continue;
+    const rec = item as Record<string, unknown>;
+    if (typeof rec.id === "string" && typeof rec.title === "string") {
+      list.push({
+        id: rec.id,
+        title: rec.title,
+        category: typeof rec.category === "string" ? rec.category : "Natural Event",
+        date: typeof rec.date === "string" ? rec.date : "",
+        distanceKm: typeof rec.distanceKm === "number" ? rec.distanceKm : 0,
+        sourceUrl:
+          typeof rec.sourceUrl === "string"
+            ? rec.sourceUrl
+            : "https://eonet.gsfc.nasa.gov/",
+      });
+    }
+  }
+  return list;
+}
+
+function readSupplemental(value: unknown): SupplementalInfo | undefined {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const rec = value as Record<string, unknown>;
+  if (
+    typeof rec.source !== "string" ||
+    typeof rec.agency !== "string" ||
+    typeof rec.badge !== "string" ||
+    typeof rec.indexName !== "string" ||
+    typeof rec.note !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    source: rec.source,
+    agency: rec.agency,
+    badge: rec.badge,
+    indexName: rec.indexName,
+    recordLengthMonths:
+      typeof rec.recordLengthMonths === "number" ? rec.recordLengthMonths : 12,
+    primarySource: typeof rec.primarySource === "string" ? rec.primarySource : "nasa-power",
+    liveTokenActive: Boolean(rec.liveTokenActive),
+    note: rec.note,
   };
 }
 
@@ -296,6 +396,7 @@ function readSignificance(value: unknown): Significance | null {
     case "significant":
     case "borderline":
     case "not_significant":
+    case "insufficient_data":
       return value;
     default:
       return null;
@@ -313,7 +414,11 @@ function readSeries(value: unknown): SeriesPoint[] {
     }
     const date = (item as { date?: unknown }).date;
     const pointValue = (item as { value?: unknown }).value;
-    if (typeof date === "string" && typeof pointValue === "number" && Number.isFinite(pointValue)) {
+    if (
+      typeof date === "string" &&
+      typeof pointValue === "number" &&
+      Number.isFinite(pointValue)
+    ) {
       points.push({ date, value: pointValue });
     }
   }
@@ -331,7 +436,11 @@ function readAnnual(value: unknown): AnnualPoint[] {
     }
     const year = (item as { year?: unknown }).year;
     const pointValue = (item as { value?: unknown }).value;
-    if (typeof year === "number" && typeof pointValue === "number" && Number.isFinite(pointValue)) {
+    if (
+      typeof year === "number" &&
+      typeof pointValue === "number" &&
+      Number.isFinite(pointValue)
+    ) {
       points.push({ year, value: pointValue });
     }
   }

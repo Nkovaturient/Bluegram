@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ContradictionPair } from "@/lib/contradictionPairs";
 import { formatCoord } from "@/lib/labels";
+import { getVariablePalette } from "@/lib/variableMeta";
 import type { VariableId } from "@/lib/types";
 
 type PairSelectorModalProps = {
@@ -51,7 +52,7 @@ export function PairSelectorModal({
     };
   }, [open]);
 
-  const unit = variable === "temperature" ? "°C/dec" : "mm/d/dec";
+  const unit = getVariablePalette(variable).unitLabel;
   const isLiveSelected = selectedPair?.source === "live";
 
   const formatSlopeBadge = (regionId: string) => {

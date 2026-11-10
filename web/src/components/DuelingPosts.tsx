@@ -343,10 +343,26 @@ function TrendCard({
           {slopeText}
         </p>
         <p className="font-mono text-[11px] tabular-nums text-slate-400">
-          p = {formatPValue(trend.pValue)} · {trend.nMonths} mo
+          p = {formatPValue(trend.pValue)}
+          {typeof trend.qValue === "number" ? ` · q = ${formatPValue(trend.qValue)}` : ""} ·{" "}
+          {trend.nMonths} mo
           {first && last ? ` (${first.slice(0, 4)}–${last.slice(0, 4)})` : ""}
         </p>
       </div>
+
+      {trend.supplemental && (
+        <div className="rounded-xl border border-indigo-400/20 bg-indigo-500/[0.05] px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[10px] font-semibold text-indigo-300">
+              {trend.supplemental.agency}
+            </span>
+            <span className="font-mono text-[10px] text-indigo-200/80">
+              {trend.supplemental.badge}
+            </span>
+          </div>
+          <p className="mt-0.5 text-[11px] text-slate-300">{trend.supplemental.indexName}</p>
+        </div>
+      )}
 
       {caption && (
         <div className="border-t border-white/8 pt-2.5">

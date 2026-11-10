@@ -353,12 +353,79 @@ function ReadyPost({
               {significanceLabel(trend.significance)} · p = {formatPValue(trend.pValue)}
             </span>
           </p>
+          {typeof trend.qValue === "number" && (
+            <span
+              className="rounded-pill border border-white/10 bg-white/[0.04] px-2.5 py-1 font-mono text-[11px] tabular-nums text-slate-300"
+              title="Benjamini–Hochberg FDR-adjusted q-value across spatial regions"
+            >
+              FDR q = {formatPValue(trend.qValue)}
+            </span>
+          )}
         </div>
         <p className="font-mono text-xs tabular-nums text-slate-400">
           {trend.nMonths} months
           {first && last ? ` · ${first} – ${last}` : ""} · NASA POWER ({trend.dataSource})
         </p>
       </div>
+
+      {trend.supplemental && (
+        <section
+          className="rounded-2xl border border-indigo-400/25 bg-indigo-500/[0.06] p-3.5"
+          aria-label="Partner and supplemental observation layer"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-indigo-300">
+              {trend.supplemental.agency}
+            </span>
+            <span className="rounded-pill border border-indigo-400/35 bg-indigo-500/15 px-2 py-0.5 font-mono text-[10px] font-medium text-indigo-200">
+              {trend.supplemental.badge}
+            </span>
+          </div>
+          <p className="mt-1.5 font-display text-xs font-semibold text-white">
+            {trend.supplemental.indexName}
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-300">
+            {trend.supplemental.note}
+          </p>
+        </section>
+      )}
+
+      {trend.events && trend.events.length > 0 && (
+        <section
+          className="rounded-2xl border border-amber-400/25 bg-amber-500/[0.05] p-3.5"
+          aria-label="Active NASA EONET natural events"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-300">
+              Active Events · NASA EONET v3 ({trend.events.length})
+            </span>
+            <a
+              href="https://eonet.gsfc.nasa.gov/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-mono text-[10px] text-slate-400 underline decoration-white/20 underline-offset-2 hover:text-white"
+            >
+              EONET Live
+            </a>
+          </div>
+          <ul className="mt-2 space-y-1.5">
+            {trend.events.map((ev) => (
+              <li
+                key={ev.id}
+                className="flex items-baseline justify-between gap-2 text-xs text-slate-200"
+              >
+                <span className="truncate">
+                  <strong className="font-medium text-amber-200">{ev.category}:</strong>{" "}
+                  {ev.title}
+                </span>
+                <span className="shrink-0 font-mono text-[10px] tabular-nums text-slate-400">
+                  {ev.distanceKm} km · {ev.date}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <footer className="border-t border-white/10 pt-4">
         <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">

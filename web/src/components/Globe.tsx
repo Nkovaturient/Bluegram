@@ -17,6 +17,11 @@ import {
   type GlobeMarkerMeta,
 } from "@/components/globeMarkerBadge";
 import {
+  GIBS_LAYERS,
+  getGibsLayer,
+  type GibsLayerId,
+} from "@/lib/gibsLayers";
+import {
   GLOBE_RADIUS,
   PIN_HEIGHT,
   PIN_RADIUS,
@@ -26,9 +31,6 @@ import {
 import { getRegionType } from "@/lib/regionMeta";
 import { slopeColorHex, slopeSpan } from "@/lib/slopeColor";
 import type { Region, VariableId } from "@/lib/types";
-
-const GIBS_BLUE_MARBLE =
-  "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=BlueMarble_ShadedRelief_Bathymetry&FORMAT=image/jpeg&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=2048&HEIGHT=1024&STYLES=";
 
 const FLY_MS = 800;
 
@@ -81,6 +83,8 @@ function GlobeInner({
   const regionsRef = useRef(regions);
   const flyRef = useRef<Fly | null>(null);
   const lastFlyTargetRef = useRef<string | null>(null);
+  const globeMaterialRef = useRef<MeshBasicMaterial | null>(null);
+  const [gibsLayer, setGibsLayer] = useState<GibsLayerId>("blue-marble");
   const [textureState, setTextureState] = useState<"loading" | "ready" | "error">("loading");
   const [textureError, setTextureError] = useState<string | null>(null);
 
@@ -153,8 +157,11 @@ function GlobeInner({
     const markerGroups = new Map<string, MarkerGroup>();
     const hitTargets: Mesh[] = [];
 
-    const pinGeometry = new THREE.ConeGeometry(PIN_RADIUS, PIN_HEIGHT, 10);
-    pinGeometry.translate(0, PIN_HEIGHT / 2, 0);
+    const pinGeometry = new THREE.ConeGeometry(PIN_RADIUS, PIN_HEIGHT, 12);
+    pinGeometry.translate(0, PIN_HEIGHT / 2 + 0.0025, 0);
+    const collarGeometry = new THREE.CylinderGeometry(PIN_RADIUS * 1.65, PIN_RADIUS * 1.65, 0.004, 16);
+    collarGeometry.translate(0, 0.002, 0);
+    const collarMaterial = new THREE.MeshBasicMaterial({ color: 0x04090f });
     const hitGeometry = new THREE.SphereGeometry(PIN_RADIUS * 1.35, 12, 12);
 
     for (const region of regions) {
@@ -163,6 +170,9 @@ function GlobeInner({
       const surface = latLonToVector3(region.latitude, region.longitude, GLOBE_RADIUS);
       group.position.copy(surface);
       group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), surface.clone().normalize());
+
+      const collar = new THREE.Mesh(collarGeometry, collarMaterial);
+      group.add(collar);
 
       const pinMaterial = new THREE.MeshBasicMaterial({ color: 0xff6b4a });
       const pin = new THREE.Mesh(pinGeometry, pinMaterial);
@@ -212,7 +222,7 @@ function GlobeInner({
     let globeGeometry: SphereGeometry | null = null;
 
     loader.load(
-      GIBS_BLUE_MARBLE,
+      getGibsLayer(gibsLayer).wmsUrl,
       (texture) => {
         if (cancelled) {
           texture.dispose();
@@ -222,6 +232,7 @@ function GlobeInner({
         texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
         globeGeometry = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 48);
         globeMaterial = new THREE.MeshBasicMaterial({ map: texture });
+        globeMaterialRef.current = globeMaterial;
         const mesh = new THREE.Mesh(globeGeometry, globeMaterial);
         earth.add(mesh);
         setTextureState("ready");
@@ -233,7 +244,7 @@ function GlobeInner({
           return;
         }
         setTextureState("error");
-        setTextureError("NASA GIBS Blue Marble texture failed to load.");
+        setTextureError("NASA GIBS imagery layer failed to load.");
       },
     );
 
@@ -413,6 +424,8 @@ function GlobeInner({
         controlsRef.current = null;
       }
       pinGeometry.dispose();
+      collarGeometry.dispose();
+      collarMaterial.dispose();
       hitGeometry.dispose();
       atmosphereHalo.geometry.dispose();
       atmosphereHalo.material.dispose();
@@ -430,6 +443,9 @@ function GlobeInner({
       if (globeMaterial) {
         globeMaterial.map?.dispose();
         globeMaterial.dispose();
+      }
+      if (globeMaterialRef.current === globeMaterial) {
+        globeMaterialRef.current = null;
       }
       renderer.dispose();
       renderer.domElement.remove();
@@ -471,9 +487,63 @@ function GlobeInner({
     };
   }, [selectedId]);
 
+  useEffect(() => {
+    const mat = globeMaterialRef.current;
+    if (!mat) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const THREE = await import("three");
+      if (cancelled) return;
+      const loader = new THREE.TextureLoader();
+      loader.setCrossOrigin("anonymous");
+      const layer = getGibsLayer(gibsLayer);
+      loader.load(layer.wmsUrl, (texture) => {
+        if (cancelled || !globeMaterialRef.current) {
+          texture.dispose();
+          return;
+        }
+        texture.colorSpace = THREE.SRGBColorSpace;
+        const prevMap = globeMaterialRef.current.map;
+        globeMaterialRef.current.map = texture;
+        globeMaterialRef.current.needsUpdate = true;
+        prevMap?.dispose();
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gibsLayer]);
+
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="absolute inset-0" />
+      <div
+        className="glass-pill absolute left-4 top-4 z-10 inline-flex items-center gap-1 rounded-pill p-1"
+        role="group"
+        aria-label="NASA GIBS imagery layer"
+      >
+        {GIBS_LAYERS.map((layer) => {
+          const active = layer.id === gibsLayer;
+          return (
+            <button
+              key={layer.id}
+              type="button"
+              onClick={() => setGibsLayer(layer.id)}
+              data-agent-action={`select-gibs-${layer.id}`}
+              className={`rounded-pill px-2.5 py-1 font-mono text-[10px] font-medium transition-all ${
+                active
+                  ? "bg-white/15 text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              title={layer.attribution}
+            >
+              {layer.shortLabel}
+            </button>
+          );
+        })}
+      </div>
       {textureState === "loading" ? (
         <div className="glass-pill pointer-events-none absolute bottom-4 left-4 rounded-pill px-3.5 py-1.5 font-mono text-xs text-slate-300">
           Loading NASA GIBS Blue Marble…

@@ -11,6 +11,9 @@ export const REGIONS: readonly Region[] = [
   { id: "gulf-of-mexico", name: "Gulf of Mexico", latitude: 25.0, longitude: -90.0 },
   { id: "siberia", name: "Siberia", latitude: 62.0, longitude: 100.0 },
   { id: "sw-usa", name: "SW USA", latitude: 34.0, longitude: -112.0 },
+  { id: "western-ghats", name: "Western Ghats", latitude: 13.5, longitude: 75.5 },
+  { id: "indo-gangetic", name: "Indo-Gangetic Plain", latitude: 26.8, longitude: 80.9 },
+  { id: "sundarbans", name: "Sundarbans Delta", latitude: 21.9, longitude: 89.2 },
 ] as const;
 
 export const REGION_BY_ID: ReadonlyMap<string, Region> = new Map(

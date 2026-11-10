@@ -20,6 +20,7 @@ import {
   DEFAULT_FEATURED_PAIR_ID,
   type ContradictionPair,
 } from "@/lib/contradictionPairs";
+import { isValidVariableId } from "@/lib/variableMeta";
 import {
   loadBookmarks,
   saveBookmarks,
@@ -136,7 +137,7 @@ export function HomePageClient() {
     if (regionParam) {
       setSelectedId(regionParam);
     }
-    if (variableParam === "temperature" || variableParam === "precipitation") {
+    if (isValidVariableId(variableParam)) {
       setVariable(variableParam);
     }
     setHydrated(true);

@@ -3,6 +3,7 @@ import {
   BackSide,
   Color,
   ConeGeometry,
+  CylinderGeometry,
   Group,
   Mesh,
   MeshBasicMaterial,
@@ -52,14 +53,31 @@ export function createSlopePinMesh(colorHex: number): {
   pin: Mesh<ConeGeometry, MeshBasicMaterial>;
   geometry: ConeGeometry;
   material: MeshBasicMaterial;
+  dispose: () => void;
 } {
-  const geometry = new ConeGeometry(PIN_RADIUS * 1.25, PIN_HEIGHT * 1.2, 12);
-  geometry.translate(0, (PIN_HEIGHT * 1.2) / 2, 0);
+  // Dark obsidian base collar so the marker stands out sharply over bright white MODIS clouds & polar ice
+  const collarGeometry = new CylinderGeometry(PIN_RADIUS * 1.95, PIN_RADIUS * 1.95, 0.005, 20);
+  collarGeometry.translate(0, 0.0025, 0);
+  const collarMaterial = new MeshBasicMaterial({ color: 0x04090f });
+  const collar = new Mesh(collarGeometry, collarMaterial);
+
+  const geometry = new ConeGeometry(PIN_RADIUS * 1.25, PIN_HEIGHT * 1.25, 16);
+  geometry.translate(0, (PIN_HEIGHT * 1.25) / 2 + 0.003, 0);
   const material = new MeshBasicMaterial({ color: colorHex });
   const pin = new Mesh(geometry, material);
+
   const group = new Group();
+  group.add(collar);
   group.add(pin);
-  return { group, pin, geometry, material };
+
+  const dispose = () => {
+    collarGeometry.dispose();
+    collarMaterial.dispose();
+    geometry.dispose();
+    material.dispose();
+  };
+
+  return { group, pin, geometry, material, dispose };
 }
 
 export function createAtmosphereHaloMesh(

@@ -5,6 +5,7 @@ import {
 } from "@/lib/contradictionPairs";
 import { REGION_BY_ID } from "@/lib/regions";
 import { statsBaseUrl } from "@/lib/stats";
+import { isValidVariableId } from "@/lib/variableMeta";
 import type { Direction, Region, Significance, VariableId } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -56,7 +57,8 @@ function parseValidPoint(raw: unknown): TrendSummaryPoint | null {
     (direction !== "increasing" && direction !== "decreasing" && direction !== "no trend") ||
     (significance !== "significant" &&
       significance !== "borderline" &&
-      significance !== "not_significant") ||
+      significance !== "not_significant" &&
+      significance !== "insufficient_data") ||
     typeof pValue !== "number" ||
     !Number.isFinite(pValue) ||
     typeof unit !== "string"
@@ -81,7 +83,7 @@ function pairRegionKey(idA: string, idB: string): string {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const rawVar = searchParams.get("variable");
-  const variable: VariableId = rawVar === "precipitation" ? "precipitation" : "temperature";
+  const variable: VariableId = isValidVariableId(rawVar) ? rawVar : "temperature";
 
   const baseUrl = statsBaseUrl();
   const knownRegions = new Map<string, Region>(REGION_BY_ID);

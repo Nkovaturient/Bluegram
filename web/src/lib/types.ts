@@ -17,13 +17,37 @@ export type AnnualPoint = {
 
 export type Direction = "increasing" | "decreasing" | "no trend";
 
-export type Significance = "significant" | "borderline" | "not_significant";
+export type Significance =
+  | "significant"
+  | "borderline"
+  | "not_significant"
+  | "insufficient_data";
 
-export type VariableId = "temperature" | "precipitation";
+export type VariableId = "temperature" | "precipitation" | "solar" | "humidity";
 
 export type SlopePoint = {
   regionId: string;
   slopePerDecade: number;
+};
+
+export type EonetEvent = {
+  id: string;
+  title: string;
+  category: string;
+  date: string;
+  distanceKm: number;
+  sourceUrl: string;
+};
+
+export type SupplementalInfo = {
+  source: string;
+  agency: string;
+  badge: string;
+  indexName: string;
+  recordLengthMonths: number;
+  primarySource: string;
+  liveTokenActive: boolean;
+  note: string;
 };
 
 export type TrendResponse = {
@@ -36,6 +60,8 @@ export type TrendResponse = {
   direction: Direction;
   significance: Significance;
   pValue: number;
+  qValue?: number;
+  missingRatio?: number;
   slopePerYear: number;
   slopePerDecade: number;
   nMonths: number;
@@ -43,6 +69,8 @@ export type TrendResponse = {
   series: SeriesPoint[];
   annual: AnnualPoint[];
   slopeLine: AnnualPoint[];
+  events?: EonetEvent[];
+  supplemental?: SupplementalInfo;
 };
 
 export type TrendState =
@@ -58,6 +86,7 @@ export type FeedItem = {
   regionType: RegionType | null;
   slopePerDecade: number;
   pValue: number;
+  qValue?: number;
   direction: Direction;
   significance: Significance;
   unit: string;

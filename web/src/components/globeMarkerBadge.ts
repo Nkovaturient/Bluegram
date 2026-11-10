@@ -22,6 +22,7 @@ function significanceModifier(significance: Significance): string {
     case "borderline":
       return "globe-marker-badge--borderline";
     case "not_significant":
+    case "insufficient_data":
       return "globe-marker-badge--muted";
     default: {
       const exhaustive: never = significance;
@@ -89,6 +90,10 @@ function variableIcon(variable: VariableId): string {
       return `<svg class="globe-marker-badge__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>`;
     case "precipitation":
       return `<svg class="globe-marker-badge__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/></svg>`;
+    case "solar":
+      return `<svg class="globe-marker-badge__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>`;
+    case "humidity":
+      return `<svg class="globe-marker-badge__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>`;
     default: {
       const exhaustive: never = variable;
       return exhaustive;
@@ -183,7 +188,6 @@ export function applyGlobeMarkerDisplay(
   }
 }
 
-/** @deprecated Prefer applyGlobeMarkerDisplay with an explicit display mode. */
 export function updateGlobeMarkerBadgeElement(
   element: HTMLDivElement,
   meta: GlobeMarkerMeta,

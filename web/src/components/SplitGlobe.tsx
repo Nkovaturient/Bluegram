@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import type { MeshBasicMaterial } from "three";
 import {
+  GIBS_LAYERS,
+  getGibsLayer,
+  type GibsLayerId,
+} from "@/lib/gibsLayers";
+import {
   GLOBE_RADIUS,
   createAtmosphereHaloMesh,
   createSlopePinMesh,
@@ -12,10 +17,8 @@ import {
 } from "@/lib/globeGeo";
 import { formatCoord } from "@/lib/labels";
 import { slopeColorHex, slopeSpan } from "@/lib/slopeColor";
+import { getVariablePalette } from "@/lib/variableMeta";
 import type { Region, VariableId } from "@/lib/types";
-
-const GIBS_BLUE_MARBLE =
-  "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=BlueMarble_ShadedRelief_Bathymetry&FORMAT=image/jpeg&CRS=EPSG:4326&BBOX=-90,-180,90,180&WIDTH=2048&HEIGHT=1024&STYLES=";
 
 const FLY_S = 0.85;
 const CAMERA_DISTANCE = 2.3;
@@ -31,9 +34,12 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
   const containerRef = useRef<HTMLDivElement>(null);
   const pinMatARef = useRef<MeshBasicMaterial | null>(null);
   const pinMatBRef = useRef<MeshBasicMaterial | null>(null);
+  const matARef = useRef<MeshBasicMaterial | null>(null);
+  const matBRef = useRef<MeshBasicMaterial | null>(null);
   const slopesRef = useRef(slopes);
   slopesRef.current = slopes;
 
+  const [gibsLayer, setGibsLayer] = useState<GibsLayerId>("blue-marble");
   const [textureState, setTextureState] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
@@ -184,7 +190,7 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
       let matB: MeshBasicMaterial | null = null;
 
       textureLoader.load(
-        GIBS_BLUE_MARBLE,
+        getGibsLayer(gibsLayer).wmsUrl,
         (texture) => {
           if (disposed) {
             texture.dispose();
@@ -194,6 +200,8 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
           texture.colorSpace = THREE.SRGBColorSpace;
           matA = new THREE.MeshBasicMaterial({ map: texture });
           matB = new THREE.MeshBasicMaterial({ map: texture });
+          matARef.current = matA;
+          matBRef.current = matB;
           earthA.add(new THREE.Mesh(geometry, matA));
           earthB.add(new THREE.Mesh(geometry, matB));
           setTextureState("ready");
@@ -242,6 +250,8 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
         disposed = true;
         pinMatARef.current = null;
         pinMatBRef.current = null;
+        matARef.current = null;
+        matBRef.current = null;
         if (frame) {
           cancelAnimationFrame(frame);
         }
@@ -250,10 +260,8 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
         observer.disconnect();
         controlsA.dispose();
         controlsB.dispose();
-        pinObjA.geometry.dispose();
-        pinObjA.material.dispose();
-        pinObjB.geometry.dispose();
-        pinObjB.material.dispose();
+        pinObjA.dispose();
+        pinObjB.dispose();
         haloA.geometry.dispose();
         haloA.material.dispose();
         haloB.geometry.dispose();
@@ -275,9 +283,38 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
     };
   }, [regionA, regionB]);
 
+  useEffect(() => {
+    if (!matARef.current || !matBRef.current) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const THREE = await import("three");
+      if (cancelled) return;
+      const loader = new THREE.TextureLoader();
+      loader.setCrossOrigin("anonymous");
+      loader.load(getGibsLayer(gibsLayer).wmsUrl, (texture) => {
+        if (cancelled || !matARef.current || !matBRef.current) {
+          texture.dispose();
+          return;
+        }
+        texture.colorSpace = THREE.SRGBColorSpace;
+        const prevMap = matARef.current.map;
+        matARef.current.map = texture;
+        matARef.current.needsUpdate = true;
+        matBRef.current.map = texture;
+        matBRef.current.needsUpdate = true;
+        prevMap?.dispose();
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gibsLayer]);
+
   const slopeA = slopes[regionA.id];
   const slopeB = slopes[regionB.id];
-  const unit = variable === "temperature" ? "°C/dec" : "mm/d/dec";
+  const unit = getVariablePalette(variable).unitLabel;
 
   return (
     <div className="relative h-full w-full overflow-hidden">
@@ -292,10 +329,37 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
         {textureState === "error" && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <p className="font-mono text-xs text-red-400">
-              Failed to load NASA GIBS Blue Marble texture
+              Failed to load NASA GIBS imagery texture
             </p>
           </div>
         )}
+      </div>
+
+      {/* GIBS Layer Switcher */}
+      <div
+        className="glass-pill absolute left-4 top-4 z-20 inline-flex items-center gap-1 rounded-pill p-1"
+        role="group"
+        aria-label="NASA GIBS imagery layer"
+      >
+        {GIBS_LAYERS.map((layer) => {
+          const active = layer.id === gibsLayer;
+          return (
+            <button
+              key={layer.id}
+              type="button"
+              onClick={() => setGibsLayer(layer.id)}
+              data-agent-action={`select-gibs-${layer.id}`}
+              className={`rounded-pill px-2.5 py-1 font-mono text-[10px] font-medium transition-all ${
+                active
+                  ? "bg-white/15 text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+              title={layer.attribution}
+            >
+              {layer.shortLabel}
+            </button>
+          );
+        })}
       </div>
 
       {/* Calibrated Telemetry Seam & Reticle */}

@@ -9,7 +9,7 @@ export type ContradictionPair = {
   regionB: Region;
   variable: VariableId;
   reason: string;
-  category: "ice" | "vegetation" | "ocean" | "atmosphere" | "precipitation";
+  category: "ice" | "vegetation" | "ocean" | "atmosphere" | "precipitation" | "monsoon";
   source?: "curated" | "live";
 };
 
@@ -27,13 +27,26 @@ export const CURATED_CONTRADICTION_PAIRS: ContradictionPair[] = [
   {
     id: DEFAULT_FEATURED_PAIR_ID,
     name: "Arctic vs Antarctic Warming",
-    description: "Polar temperature contrast on NASA POWER (ice mass anomaly deferred until GRACE-FO/NSIDC integration)",
+    description:
+      "Polar temperature contrast on NASA POWER (ice mass anomaly deferred until GRACE-FO/NSIDC integration)",
     regionA: requireRegion("arctic"),
     regionB: requireRegion("antarctic"),
     variable: "temperature",
     reason:
       "Polar temperature contrast on NASA POWER (ice mass deferred until GRACE/NSIDC lands): the Arctic undergoes amplified warming from sea-ice-albedo feedback and oceanic heat transport, while the high-elevation Antarctic interior is buffered by the circumpolar vortex and Southern Ocean upwelling.",
     category: "ice",
+    source: "curated",
+  },
+  {
+    id: "western-ghats-indo-gangetic-precip",
+    name: "Western Ghats vs Indo-Gangetic Plain",
+    description: "ISRO monsoon belt contrast: coastal orographic belt vs northern alluvial plains",
+    regionA: requireRegion("western-ghats"),
+    regionB: requireRegion("indo-gangetic"),
+    variable: "precipitation",
+    reason:
+      "Indian subcontinent monsoon divergence (ISRO MOSDAC / NASA POWER anchor): the Western Ghats receive intense Arabian Sea orographic moisture pulses, while the Indo-Gangetic Plain (Ganga/Lucknow corridor) is modulated by monsoon trough shifts, aerosol-cloud interactions, and intensive irrigation.",
+    category: "monsoon",
     source: "curated",
   },
   {
