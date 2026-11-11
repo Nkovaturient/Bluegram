@@ -18,7 +18,8 @@
 
 ## Features
 
-- **3D Globe & GIBS Switcher** — Switch between NASA GIBS `Blue Marble Bathymetry`, `MODIS Terra True Color`, and `VIIRS Black Marble` in real time; slope-colored 3D pins with Fresnel atmospheric halo.
+- **Bluegram Pulse (`/feed`)** — Instagram-inspired multi-agency scroll stream paired with a sticky, `IntersectionObserver`-synced 3D side-globe that automatically flies to each scrolled region's coordinates. Includes **6-Agency Consensus Tabs (`NASA · ESA · JAXA · ISRO · Roscosmos · CNSA`)**, custom era windows (`1981–2025`, `2000–2025`, `2010–2025`, `1981–2005`), region subscriptions (`★ Following`), live **NASA EONET v3** pings, historical anecdotes, and DOI-linked peer-reviewed papers.
+- **3D Globe & GIBS Switcher** — Switch between NASA GIBS `Blue Marble Bathymetry`, `MODIS Terra True Color`, and `VIIRS Black Marble` in real time; slope-colored 3D pins with obsidian contrast collars and Fresnel atmospheric halo.
 - **Multi-Variable Feed** — Temperature (`Coral`), Precipitation (`Blue-Violet`), Solar Radiation (`Amber`), and Relative Humidity (`Teal`) across 13 regions, sorted by Mann–Kendall p-value.
 - **Statistical Rigor** — Deseasonalized monthly series (1981–2025, 540 months), Mann–Kendall `p-value`, Benjamini–Hochberg spatial FDR `q-value`, Theil–Sen decadal slope, and `>20%` missing-data guard.
 - **Contradiction Detector** — Canvas-first dual-globe comparison with custom glass pair combobox (`Featured` + `Live Detected` pairs), `|Δ slope|` readout, and AI synthesis.
@@ -98,8 +99,8 @@ Zero-auth NASA POWER, NASA GIBS, and NASA EONET v3 work out-of-the-box. When add
 | `/api/regions` | `GET` | Python (`:8000`) | `{ regions: [{ id, name, latitude, longitude }] }` (13 regions) |
 | `/api/providers` | `GET` | Python (`:8000`) | `{ providers: { nasa_power, nasa_gibs, nasa_eonet_v3, nasa_api_key, ... } }` |
 | `/api/events?region={id}` | `GET` | Python (`:8000`) | `{ regionId, events: [{ id, title, category, date, distanceKm, sourceUrl }] }` |
-| `/api/trend?region={id}&variable={var}` | `GET` | Python (`:8000`) | `{ region, variable, unit, direction, significance, pValue, qValue, missingRatio, slopePerDecade, series, annual, slopeLine, events, supplemental }` |
-| `/api/trends?variable={var}` | `GET` | Python (`:8000`) | `{ variable, unit, points: [{ regionId, slopePerDecade, pValue, qValue, significance, direction }] }` |
+| `/api/trend?region={id}&variable={var}&start_year={y0}&end_year={y1}` | `GET` | Python (`:8000`) | `{ region, variable, unit, startYear, endYear, direction, significance, pValue, qValue, missingRatio, slopePerDecade, series, annual, slopeLine, events, supplemental }` |
+| `/api/trends?variable={var}&start_year={y0}&end_year={y1}` | `GET` | Python (`:8000`) | `{ variable, unit, startYear, endYear, points: [{ regionId, slopePerDecade, pValue, qValue, significance, direction }] }` |
 | `/api/contradiction-pairs?variable={var}` | `GET` | Next.js (`:3000`) | `{ curated: ContradictionPair[], live: ContradictionPair[] }` |
 | `/api/caption` | `POST` | Next.js (`:3000`) | `{ caption: string }` (supports single region & `comparisonMode`) |
 | `/api/ipfs` | `POST` | Next.js (`:3000`) | `{ cid, gateway_url, timestamp, size }` |

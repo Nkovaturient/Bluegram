@@ -6,20 +6,43 @@ Run from this directory: .venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from analysis import SeriesRejected, compute_fdr_qvalues, compute_trend
-from partners import (
+
+def _autoload_dotenv() -> None:
+    """Lightweight .env loader so stats/.env keys take effect without extra pip deps."""
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.exists():
+        return
+    try:
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except Exception:
+        pass
+
+
+_autoload_dotenv()
+
+from analysis import SeriesRejected, compute_fdr_qvalues, compute_trend  # noqa: E402
+from partners import (  # noqa: E402
     fetch_region_eonet_events,
     get_provider_status,
     get_region_supplemental,
 )
-from power import PowerError, get_series
-from regions import BY_ID, REGIONS, Region
-from variables import DEFAULT_VARIABLE, VARIABLES, VariableSpec
+from power import PowerError, get_series  # noqa: E402
+from regions import BY_ID, REGIONS, Region  # noqa: E402
+from variables import DEFAULT_VARIABLE, VARIABLES, VariableSpec  # noqa: E402
 
 
 @asynccontextmanager
@@ -64,6 +87,7 @@ def list_regions() -> dict[str, object]:
 
 @app.get("/api/providers")
 def list_providers() -> dict[str, object]:
+    _autoload_dotenv()
     return {"providers": get_provider_status()}
 
 
@@ -94,20 +118,25 @@ async def trend(
     request: Request,
     region: str = Query(min_length=1),
     variable: str = Query(default=DEFAULT_VARIABLE),
+    start_year: int = Query(default=1981, ge=1981, le=2025),
+    end_year: int = Query(default=2025, ge=1981, le=2025),
 ) -> dict[str, object]:
     found = BY_ID.get(region)
     if found is None:
         raise HTTPException(status_code=404, detail=f"Unknown region '{region}'")
+    if end_year <= start_year:
+        raise HTTPException(status_code=422, detail="end_year must be greater than start_year")
     spec = _variable(variable)
     try:
         series = await get_series(request.app.state.http, found, spec.parameter)
-        result = compute_trend(found, series, spec)
+        result = compute_trend(
+            found, series, spec, start_year=start_year, end_year=end_year
+        )
     except PowerError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except SeriesRejected as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    # Compute spatial FDR qValue across cached/available regions if available, else fallback to pValue
     p_map: dict[str, float] = {found.id: float(result["pValue"])}
     for other in REGIONS:
         if other.id == found.id:
@@ -116,7 +145,9 @@ async def trend(
             other_series = await get_series(
                 request.app.state.http, other, spec.parameter
             )
-            other_res = compute_trend(other, other_series, spec)
+            other_res = compute_trend(
+                other, other_series, spec, start_year=start_year, end_year=end_year
+            )
             p_map[other.id] = float(other_res["pValue"])
         except Exception:
             continue
@@ -135,13 +166,19 @@ async def trend(
 async def trends(
     request: Request,
     variable: str = Query(default=DEFAULT_VARIABLE),
+    start_year: int = Query(default=1981, ge=1981, le=2025),
+    end_year: int = Query(default=2025, ge=1981, le=2025),
 ) -> dict[str, object]:
     spec = _variable(variable)
+    if end_year <= start_year:
+        raise HTTPException(status_code=422, detail="end_year must be greater than start_year")
 
     async def one(region: Region) -> dict[str, object]:
         try:
             series = await get_series(request.app.state.http, region, spec.parameter)
-            result = compute_trend(region, series, spec)
+            result = compute_trend(
+                region, series, spec, start_year=start_year, end_year=end_year
+            )
         except (PowerError, SeriesRejected) as exc:
             return {"regionId": region.id, "error": str(exc)}
         return {
@@ -151,6 +188,8 @@ async def trends(
             "significance": result["significance"],
             "pValue": result["pValue"],
             "unit": result["unit"],
+            "startYear": result["startYear"],
+            "endYear": result["endYear"],
         }
 
     raw_points = list(await asyncio.gather(*(one(region) for region in REGIONS)))
@@ -165,4 +204,10 @@ async def trends(
         if rid in q_map:
             pt["qValue"] = q_map[rid]
 
-    return {"variable": spec.id, "unit": spec.unit, "points": raw_points}
+    return {
+        "variable": spec.id,
+        "unit": spec.unit,
+        "startYear": start_year,
+        "endYear": end_year,
+        "points": raw_points,
+    }

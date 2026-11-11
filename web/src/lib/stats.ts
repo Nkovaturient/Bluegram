@@ -13,6 +13,11 @@ import type {
 } from "@/lib/types";
 import { getRegionType } from "@/lib/regionMeta";
 
+export type TimeWindow = {
+  startYear: number;
+  endYear: number;
+};
+
 export function statsBaseUrl(): string {
   const configured = process.env.NEXT_PUBLIC_STATS_URL;
   if (typeof configured === "string" && configured.trim().length > 0) {
@@ -50,12 +55,41 @@ export async function fetchRegions(signal: AbortSignal): Promise<Region[]> {
   return regions;
 }
 
+export async function fetchRegionEvents(
+  regionId: string,
+  signal: AbortSignal,
+): Promise<EonetEvent[]> {
+  const url = `${statsBaseUrl()}/api/events?region=${encodeURIComponent(regionId)}`;
+  try {
+    const response = await fetch(url, { signal, cache: "no-store" });
+    if (!response.ok) {
+      return [];
+    }
+    const body = (await response.json()) as { events?: unknown };
+    return readEvents(body.events);
+  } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw error;
+    }
+    return [];
+  }
+}
+
 export async function fetchTrend(
   regionId: string,
   variable: VariableId,
   signal: AbortSignal,
+  timeWindow?: TimeWindow,
 ): Promise<TrendResponse> {
-  const url = `${statsBaseUrl()}/api/trend?region=${encodeURIComponent(regionId)}&variable=${encodeURIComponent(variable)}`;
+  const params = new URLSearchParams({
+    region: regionId,
+    variable,
+  });
+  if (timeWindow) {
+    params.set("start_year", String(timeWindow.startYear));
+    params.set("end_year", String(timeWindow.endYear));
+  }
+  const url = `${statsBaseUrl()}/api/trend?${params.toString()}`;
   let response: Response;
   try {
     response = await fetch(url, { signal, cache: "no-store" });
@@ -79,8 +113,14 @@ export async function fetchTrend(
 export async function fetchSlopes(
   variable: VariableId,
   signal: AbortSignal,
+  timeWindow?: TimeWindow,
 ): Promise<SlopePoint[]> {
-  const url = `${statsBaseUrl()}/api/trends?variable=${encodeURIComponent(variable)}`;
+  const params = new URLSearchParams({ variable });
+  if (timeWindow) {
+    params.set("start_year", String(timeWindow.startYear));
+    params.set("end_year", String(timeWindow.endYear));
+  }
+  const url = `${statsBaseUrl()}/api/trends?${params.toString()}`;
   let response: Response;
   try {
     response = await fetch(url, { signal, cache: "no-store" });
@@ -122,11 +162,17 @@ export async function fetchSlopes(
 export async function fetchFeedSummary(
   variable: VariableId,
   signal: AbortSignal,
+  timeWindow?: TimeWindow,
 ): Promise<FeedItem[]> {
   const regions = await fetchRegions(signal);
   const regionMap = new Map(regions.map((r) => [r.id, r]));
 
-  const url = `${statsBaseUrl()}/api/trends?variable=${encodeURIComponent(variable)}`;
+  const params = new URLSearchParams({ variable });
+  if (timeWindow) {
+    params.set("start_year", String(timeWindow.startYear));
+    params.set("end_year", String(timeWindow.endYear));
+  }
+  const url = `${statsBaseUrl()}/api/trends?${params.toString()}`;
   let response: Response;
   try {
     response = await fetch(url, { signal, cache: "no-store" });
@@ -303,6 +349,10 @@ function readTrend(value: unknown): TrendResponse | null {
     typeof record.missingRatio === "number" && Number.isFinite(record.missingRatio)
       ? record.missingRatio
       : undefined;
+  const startYear =
+    typeof record.startYear === "number" ? record.startYear : undefined;
+  const endYear =
+    typeof record.endYear === "number" ? record.endYear : undefined;
 
   return {
     region,
@@ -311,6 +361,8 @@ function readTrend(value: unknown): TrendResponse | null {
     unit: record.unit,
     units: record.units,
     dataSource: record.dataSource,
+    startYear,
+    endYear,
     direction,
     significance,
     pValue: record.pValue,

@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { TrendFeed } from "@/components/TrendFeed";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/contradictionPairs";
 import { isValidVariableId } from "@/lib/variableMeta";
 import {
+  getSubscribedRegionIds,
   loadBookmarks,
   saveBookmarks,
   isBookmarked,
@@ -101,6 +103,11 @@ export function HomePageClient() {
     setPairsFromApi,
   } = useContradictionStore();
 
+  const subscribedRegionIds = useMemo(
+    () => getSubscribedRegionIds(bookmarks),
+    [bookmarks],
+  );
+
   const {
     filtered,
     filterState,
@@ -110,7 +117,8 @@ export function HomePageClient() {
     setSignificanceTiers,
     setDirections,
     setRegionTypes,
-  } = useTrendFilter(feedItems);
+    setShowBookmarkedOnly,
+  } = useTrendFilter(feedItems, subscribedRegionIds);
 
   const globeRegions = useMemo(
     () => feedItems.map((item) => item.region),
@@ -412,11 +420,16 @@ export function HomePageClient() {
           significanceTiers={filterState.significanceTiers}
           directions={filterState.directions}
           regionTypes={filterState.regionTypes}
+          showBookmarkedOnly={filterState.showBookmarkedOnly}
+          subscribedCount={subscribedRegionIds.size}
           showClearAll={hasActiveFilters}
           onClearAll={clearAllFilters}
           onSignificanceToggle={handleSignificanceToggle}
           onDirectionToggle={handleDirectionToggle}
           onRegionTypeToggle={handleRegionTypeToggle}
+          onBookmarkedOnlyToggle={() =>
+            setShowBookmarkedOnly(!filterState.showBookmarkedOnly)
+          }
         />
       </div>
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-thin">
@@ -516,6 +529,31 @@ export function HomePageClient() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {!enabled && (
+              <nav
+                aria-label="View mode"
+                className="inline-flex items-center rounded-xl border border-white/12 bg-[#08101b] p-1"
+              >
+                <span
+                  aria-current="page"
+                  className="rounded-lg bg-primary/20 px-3 py-1.5 font-mono text-xs font-semibold text-white shadow-sm"
+                >
+                  Globe Explorer
+                </span>
+                <Link
+                  href={
+                    selectedId
+                      ? `/feed?region=${encodeURIComponent(selectedId)}&variable=${encodeURIComponent(variable)}`
+                      : `/feed?variable=${encodeURIComponent(variable)}`
+                  }
+                  data-agent-action="switch-to-pulse-feed"
+                  className="rounded-lg px-3 py-1.5 font-mono text-xs font-medium text-slate-400 transition-colors hover:text-white"
+                >
+                  Pulse Feed
+                </Link>
+              </nav>
+            )}
+
             {enabled && (
               <>
                 <VariableTabs value={variable} onChange={setVariable} compact />

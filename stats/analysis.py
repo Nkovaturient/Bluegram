@@ -11,12 +11,13 @@ from regions import Region
 from variables import VariableSpec
 
 MIN_USABLE_MONTHS = 20 * 12
+MIN_CUSTOM_WINDOW_YEARS = 10
 SHORT_GAP_MONTHS = 3
 MAX_MISSING_RATIO = 0.20
 
 
 class SeriesRejected(Exception):
-    """The NASA series cannot support a 20-year trend. Not a substitute result."""
+    """The NASA series cannot support a trend over the requested window. Not a substitute result."""
 
 
 @dataclass(frozen=True)
@@ -49,22 +50,37 @@ def compute_trend(
     series: PowerSeries,
     variable: VariableSpec,
     q_value: float | None = None,
+    start_year: int = 1981,
+    end_year: int = 2025,
 ) -> dict[str, object]:
-    observed = _observed_months(series)
+    is_default_window = start_year == 1981 and end_year == 2025
+    window_span_years = max(1, end_year - start_year + 1)
+    min_required_years = (
+        20 if is_default_window else max(MIN_CUSTOM_WINDOW_YEARS, min(20, window_span_years - 1))
+    )
+    min_required_months = min_required_years * 12
+
+    all_observed = _observed_months(series)
+    observed = [
+        pt for pt in all_observed if start_year <= pt.year <= end_year
+    ]
+    if len(observed) == 0:
+        raise SeriesRejected(f"No observations in window {start_year}–{end_year}")
+
     total_months = len(observed)
     usable = [point for point in observed if point.value is not None]
     missing_ratio = (
         max(0.0, (total_months - len(usable)) / total_months) if total_months > 0 else 1.0
     )
 
-    if len(usable) < MIN_USABLE_MONTHS:
+    if len(usable) < min_required_months:
         raise SeriesRejected(
-            f"Fewer than 20 years of usable months ({len(usable)} after dropping fill values)"
+            f"Fewer than {min_required_years} years of usable months ({len(usable)} after dropping fill values)"
         )
     years = {point.year for point in usable}
-    if len(years) < 20:
+    if len(years) < min_required_years:
         raise SeriesRejected(
-            f"Fewer than 20 years with usable months ({len(years)} years)"
+            f"Fewer than {min_required_years} years with usable months ({len(years)} years)"
         )
     analysis = _interpolate_short_gaps(_continuous(observed))
     analysis = _trim_edges(analysis)
@@ -72,9 +88,9 @@ def compute_trend(
         raise SeriesRejected(
             "Series still has gaps longer than 3 months after interpolation"
         )
-    if len(analysis) < MIN_USABLE_MONTHS:
+    if len(analysis) < min_required_months:
         raise SeriesRejected(
-            f"Fewer than 20 years of usable months ({len(analysis)} after preprocessing)"
+            f"Fewer than {min_required_years} years of usable months ({len(analysis)} after preprocessing)"
         )
     raw_values = [point.value for point in analysis]
     months = [point.month for point in analysis]
@@ -116,6 +132,8 @@ def compute_trend(
         "unit": variable.unit,
         "units": series.units,
         "dataSource": "nasa",
+        "startYear": annual[0][0],
+        "endYear": annual[-1][0],
         "direction": _direction(slope_per_year),
         "significance": significance,
         "pValue": p_value,

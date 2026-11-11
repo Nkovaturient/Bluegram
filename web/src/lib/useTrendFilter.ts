@@ -1,7 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
 import type { Direction, FeedItem, FilterState, RegionType, Significance } from "@/lib/types";
 
-export function useTrendFilter(items: FeedItem[]) {
+export function useTrendFilter(
+  items: FeedItem[],
+  subscribedRegionIds?: ReadonlySet<string>,
+) {
   const [searchText, setSearchText] = useState("");
   const [significanceTiers, setSignificanceTiers] = useState<Set<Significance>>(new Set());
   const [directions, setDirections] = useState<Set<Direction>>(new Set());
@@ -10,7 +13,17 @@ export function useTrendFilter(items: FeedItem[]) {
 
   const filtered = useMemo(() => {
     return items.filter((item) => {
-      if (searchText.trim() && !item.region.name.toLowerCase().includes(searchText.toLowerCase())) {
+      if (
+        showBookmarkedOnly &&
+        subscribedRegionIds &&
+        !subscribedRegionIds.has(item.region.id)
+      ) {
+        return false;
+      }
+      if (
+        searchText.trim() &&
+        !item.region.name.toLowerCase().includes(searchText.toLowerCase())
+      ) {
         return false;
       }
       if (significanceTiers.size > 0 && !significanceTiers.has(item.significance)) {
@@ -24,7 +37,15 @@ export function useTrendFilter(items: FeedItem[]) {
       }
       return true;
     });
-  }, [items, searchText, significanceTiers, directions, regionTypes]);
+  }, [
+    items,
+    showBookmarkedOnly,
+    subscribedRegionIds,
+    searchText,
+    significanceTiers,
+    directions,
+    regionTypes,
+  ]);
 
   const filterState: FilterState = {
     searchText,
@@ -36,18 +57,20 @@ export function useTrendFilter(items: FeedItem[]) {
 
   const hasActiveFilters = useMemo(() => {
     return (
+      showBookmarkedOnly ||
       searchText.trim().length > 0 ||
       significanceTiers.size > 0 ||
       directions.size > 0 ||
       regionTypes.size > 0
     );
-  }, [searchText, significanceTiers, directions, regionTypes]);
+  }, [showBookmarkedOnly, searchText, significanceTiers, directions, regionTypes]);
 
   const clearAllFilters = useCallback(() => {
     setSearchText("");
     setSignificanceTiers(new Set());
     setDirections(new Set());
     setRegionTypes(new Set());
+    setShowBookmarkedOnly(false);
   }, []);
 
   return {

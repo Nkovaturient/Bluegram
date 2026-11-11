@@ -6,11 +6,14 @@ type FilterPanelProps = {
   significanceTiers: Set<Significance>;
   directions: Set<Direction>;
   regionTypes: Set<RegionType>;
+  showBookmarkedOnly?: boolean;
+  subscribedCount?: number;
   showClearAll: boolean;
   onClearAll: () => void;
   onSignificanceToggle: (tier: Significance) => void;
   onDirectionToggle: (direction: Direction) => void;
   onRegionTypeToggle: (type: RegionType) => void;
+  onBookmarkedOnlyToggle?: () => void;
 };
 
 const SIGNIFICANCE_OPTIONS: { value: Significance; label: string }[] = [
@@ -36,21 +39,47 @@ export function FilterPanel({
   significanceTiers,
   directions,
   regionTypes,
+  showBookmarkedOnly = false,
+  subscribedCount = 0,
   showClearAll,
   onClearAll,
   onSignificanceToggle,
   onDirectionToggle,
   onRegionTypeToggle,
+  onBookmarkedOnlyToggle,
 }: FilterPanelProps) {
   const activeCount =
-    significanceTiers.size + directions.size + regionTypes.size;
+    significanceTiers.size +
+    directions.size +
+    regionTypes.size +
+    (showBookmarkedOnly ? 1 : 0);
 
   return (
     <nav className="border-b border-white/10 px-4 pb-3 lg:px-5" aria-label="Trend filters">
       <div className="mb-2 flex min-h-[1.25rem] items-center justify-between gap-2">
-        <p className="text-caption-sm uppercase text-slate-500">
-          Filters {activeCount > 0 && `(${activeCount})`}
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-caption-sm uppercase text-slate-500">
+            Filters {activeCount > 0 && `(${activeCount})`}
+          </p>
+          {onBookmarkedOnlyToggle && (
+            <button
+              type="button"
+              onClick={onBookmarkedOnlyToggle}
+              aria-pressed={showBookmarkedOnly}
+              data-agent-action="toggle-following-filter"
+              className={`inline-flex items-center gap-1 rounded-pill border px-2.5 py-0.5 font-mono text-[10px] font-medium transition-all ${
+                showBookmarkedOnly
+                  ? "border-amber-400/50 bg-amber-400/15 text-amber-200"
+                  : "border-white/10 bg-white/5 text-slate-300 hover:border-white/20"
+              }`}
+            >
+              <span>★ Following</span>
+              {subscribedCount > 0 && (
+                <span className="opacity-75">({subscribedCount})</span>
+              )}
+            </button>
+          )}
+        </div>
         {showClearAll ? (
           <button
             type="button"

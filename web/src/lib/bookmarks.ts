@@ -1,3 +1,4 @@
+import { isValidVariableId } from "@/lib/variableMeta";
 import type { VariableId } from "@/lib/types";
 
 const STORAGE_KEY = "bluegram:saved-posts";
@@ -26,10 +27,9 @@ export function loadBookmarks(): Bookmark[] {
         typeof item === "object" &&
         item !== null &&
         typeof (item as { regionId?: unknown }).regionId === "string" &&
-        (typeof (item as { variable?: unknown }).variable === "string") &&
-        ((item as { variable?: unknown }).variable === "temperature" ||
-          (item as { variable?: unknown }).variable === "precipitation") &&
-        typeof (item as { savedAt?: unknown }).savedAt === "string"
+        typeof (item as { variable?: unknown }).variable === "string" &&
+        isValidVariableId((item as { variable: string }).variable) &&
+        typeof (item as { savedAt?: unknown }).savedAt === "string",
     );
   } catch {
     return [];
@@ -50,20 +50,20 @@ export function saveBookmarks(bookmarks: Bookmark[]): void {
 export function isBookmarked(
   regionId: string,
   variable: VariableId,
-  bookmarks: Bookmark[]
+  bookmarks: Bookmark[],
 ): boolean {
   return bookmarks.some(
-    (b) => b.regionId === regionId && b.variable === variable
+    (b) => b.regionId === regionId && b.variable === variable,
   );
 }
 
 export function toggleBookmark(
   regionId: string,
   variable: VariableId,
-  bookmarks: Bookmark[]
+  bookmarks: Bookmark[],
 ): Bookmark[] {
   const existing = bookmarks.findIndex(
-    (b) => b.regionId === regionId && b.variable === variable
+    (b) => b.regionId === regionId && b.variable === variable,
   );
   if (existing >= 0) {
     return bookmarks.filter((_, i) => i !== existing);
@@ -71,5 +71,35 @@ export function toggleBookmark(
   return [
     ...bookmarks,
     { regionId, variable, savedAt: new Date().toISOString() },
+  ];
+}
+
+export function getSubscribedRegionIds(bookmarks: Bookmark[]): Set<string> {
+  return new Set(bookmarks.map((b) => b.regionId));
+}
+
+export function isRegionSubscribed(
+  regionId: string,
+  bookmarks: Bookmark[],
+): boolean {
+  return bookmarks.some((b) => b.regionId === regionId);
+}
+
+export function toggleRegionSubscription(
+  regionId: string,
+  activeVariable: VariableId,
+  bookmarks: Bookmark[],
+): Bookmark[] {
+  const currentlySubscribed = isRegionSubscribed(regionId, bookmarks);
+  if (currentlySubscribed) {
+    return bookmarks.filter((b) => b.regionId !== regionId);
+  }
+  return [
+    ...bookmarks,
+    {
+      regionId,
+      variable: activeVariable,
+      savedAt: new Date().toISOString(),
+    },
   ];
 }

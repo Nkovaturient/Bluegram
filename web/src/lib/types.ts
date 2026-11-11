@@ -57,6 +57,8 @@ export type TrendResponse = {
   unit: string;
   units: string;
   dataSource: string;
+  startYear?: number;
+  endYear?: number;
   direction: Direction;
   significance: Significance;
   pValue: number;
