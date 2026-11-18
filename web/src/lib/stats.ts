@@ -3,11 +3,16 @@ import type {
   Direction,
   EonetEvent,
   FeedItem,
+  GlobalEonetEvent,
+  IsroGroundTelemetry,
+  PlanetaryIntelResponse,
+  PlanetaryStacScene,
   Region,
   SeriesPoint,
   Significance,
   SlopePoint,
   SupplementalInfo,
+  SynopticNowcast,
   TrendResponse,
   VariableId,
 } from "@/lib/types";
@@ -67,11 +72,125 @@ export async function fetchRegionEvents(
     }
     const body = (await response.json()) as { events?: unknown };
     return readEvents(body.events);
-  } catch (error: unknown) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw error;
-    }
+  } catch {
     return [];
+  }
+}
+
+export async function fetchGlobalEonetEvents(
+  signal: AbortSignal,
+): Promise<GlobalEonetEvent[]> {
+  const url = `${statsBaseUrl()}/api/events/global`;
+  try {
+    const response = await fetch(url, { signal, cache: "no-store" });
+    if (!response.ok) {
+      return [];
+    }
+    const body = (await response.json()) as { events?: unknown };
+    if (!Array.isArray(body.events)) {
+      return [];
+    }
+    const list: GlobalEonetEvent[] = [];
+    for (const item of body.events) {
+      if (typeof item !== "object" || item === null) continue;
+      const rec = item as Record<string, unknown>;
+      if (
+        typeof rec.id === "string" &&
+        typeof rec.title === "string" &&
+        typeof rec.latitude === "number" &&
+        typeof rec.longitude === "number"
+      ) {
+        list.push({
+          id: rec.id,
+          title: rec.title,
+          category: typeof rec.category === "string" ? rec.category : "Natural Event",
+          date: typeof rec.date === "string" ? rec.date : "",
+          latitude: rec.latitude,
+          longitude: rec.longitude,
+          sourceUrl:
+            typeof rec.sourceUrl === "string"
+              ? rec.sourceUrl
+              : "https://eonet.gsfc.nasa.gov/",
+        });
+      }
+    }
+    return list;
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchPlanetaryIntel(
+  regionId: string,
+  signal: AbortSignal,
+): Promise<PlanetaryIntelResponse | null> {
+  const url = `${statsBaseUrl()}/api/planetary-intel?region=${encodeURIComponent(regionId)}`;
+  try {
+    const response = await fetch(url, { signal, cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+    const body = (await response.json()) as Record<string, unknown>;
+    const stacRaw = body.stacScene as Record<string, unknown> | undefined;
+    const synRaw = body.synoptic as Record<string, unknown> | undefined;
+    const isroRaw = body.isroTelemetry as Record<string, unknown> | undefined;
+    if (!stacRaw || !synRaw || !isroRaw) {
+      return null;
+    }
+
+    const stacScene: PlanetaryStacScene = {
+      id: String(stacRaw.id ?? ""),
+      collection: String(stacRaw.collection ?? "sentinel-2-l2a"),
+      platform: String(stacRaw.platform ?? "SENTINEL-2"),
+      datetime: String(stacRaw.datetime ?? ""),
+      cloudCover: typeof stacRaw.cloudCover === "number" ? stacRaw.cloudCover : null,
+      previewUrl: typeof stacRaw.previewUrl === "string" ? stacRaw.previewUrl : null,
+      catalogUrl: String(
+        stacRaw.catalogUrl ?? "https://planetarycomputer.microsoft.com/catalog",
+      ),
+      stacApiUrl: String(
+        stacRaw.stacApiUrl ?? "https://planetarycomputer.microsoft.com/api/stac/v1",
+      ),
+    };
+
+    const synoptic: SynopticNowcast = {
+      source: String(synRaw.source ?? "synoptic"),
+      providerLabel: String(synRaw.providerLabel ?? "Live Synoptic Telemetry"),
+      observedAt: String(synRaw.observedAt ?? ""),
+      temperatureC:
+        typeof synRaw.temperatureC === "number" ? synRaw.temperatureC : null,
+      precip24hMm:
+        typeof synRaw.precip24hMm === "number" ? synRaw.precip24hMm : null,
+      windSpeedMs:
+        typeof synRaw.windSpeedMs === "number" ? synRaw.windSpeedMs : null,
+      pressureHpa:
+        typeof synRaw.pressureHpa === "number" ? synRaw.pressureHpa : null,
+      humidityPct:
+        typeof synRaw.humidityPct === "number" ? synRaw.humidityPct : null,
+    };
+
+    const isroTelemetry: IsroGroundTelemetry = {
+      groundStation: String(isroRaw.groundStation ?? "ISTRAC Ground Network"),
+      downlinkBand: String(isroRaw.downlinkBand ?? "S/X-Band Telemetry"),
+      scienceArchive: String(isroRaw.scienceArchive ?? "ISSDC Byalalu"),
+      datasetId: String(isroRaw.datasetId ?? "ISRO-ISSDC"),
+      archiveUrl: String(
+        isroRaw.archiveUrl ?? "https://www.isro.gov.in/Sciencedata.html",
+      ),
+      istracUrl: String(
+        isroRaw.istracUrl ?? "https://www.istrac.gov.in/brochure.html",
+      ),
+      issdcUrl: String(isroRaw.issdcUrl ?? "https://www.issdc.gov.in/"),
+    };
+
+    return {
+      regionId,
+      stacScene,
+      synoptic,
+      isroTelemetry,
+    };
+  } catch {
+    return null;
   }
 }
 

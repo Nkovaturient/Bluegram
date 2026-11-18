@@ -30,7 +30,8 @@ import {
 } from "@/lib/globeGeo";
 import { getRegionType } from "@/lib/regionMeta";
 import { slopeColorHex, slopeSpan } from "@/lib/slopeColor";
-import type { Region, VariableId } from "@/lib/types";
+import { fetchGlobalEonetEvents } from "@/lib/stats";
+import type { GlobalEonetEvent, Region, VariableId } from "@/lib/types";
 
 const FLY_MS = 800;
 
@@ -84,9 +85,26 @@ function GlobeInner({
   const flyRef = useRef<Fly | null>(null);
   const lastFlyTargetRef = useRef<string | null>(null);
   const globeMaterialRef = useRef<MeshBasicMaterial | null>(null);
+  const eonetGroupRef = useRef<Group | null>(null);
   const [gibsLayer, setGibsLayer] = useState<GibsLayerId>("blue-marble");
+  const [showEonetHazards, setShowEonetHazards] = useState(true);
+  const [eonetEvents, setEonetEvents] = useState<GlobalEonetEvent[]>([]);
   const [textureState, setTextureState] = useState<"loading" | "ready" | "error">("loading");
   const [textureError, setTextureError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchGlobalEonetEvents(controller.signal)
+      .then((events) => {
+        if (!controller.signal.aborted) {
+          setEonetEvents(events);
+        }
+      })
+      .catch(() => {
+        // Ignore abort on unmount / strict-mode remount
+      });
+    return () => controller.abort();
+  }, []);
 
   selectedRef.current = selectedId;
   onSelectRef.current = onSelect;
@@ -152,6 +170,9 @@ function GlobeInner({
 
     const earth = new THREE.Group();
     scene.add(earth);
+    const eonetGroup = new THREE.Group();
+    earth.add(eonetGroup);
+    eonetGroupRef.current = eonetGroup;
     const atmosphereHalo = createAtmosphereHaloMesh(GLOBE_RADIUS, 0x38bdf8);
     scene.add(atmosphereHalo.mesh);
     const markerGroups = new Map<string, MarkerGroup>();
@@ -447,6 +468,9 @@ function GlobeInner({
       if (globeMaterialRef.current === globeMaterial) {
         globeMaterialRef.current = null;
       }
+      if (eonetGroupRef.current === eonetGroup) {
+        eonetGroupRef.current = null;
+      }
       renderer.dispose();
       renderer.domElement.remove();
       labelRenderer.domElement.remove();
@@ -516,33 +540,130 @@ function GlobeInner({
     };
   }, [gibsLayer]);
 
+  useEffect(() => {
+    const group = eonetGroupRef.current;
+    if (!group) {
+      return;
+    }
+    group.visible = showEonetHazards;
+    if (!showEonetHazards || eonetEvents.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    let disposeHazards: (() => void) | undefined;
+
+    void (async () => {
+      const THREE = await import("three");
+      if (cancelled || !eonetGroupRef.current) return;
+      const targetGroup = eonetGroupRef.current;
+      while (targetGroup.children.length > 0) {
+        targetGroup.remove(targetGroup.children[0]);
+      }
+
+      const ringGeo = new THREE.RingGeometry(0.011, 0.019, 20);
+      ringGeo.rotateX(-Math.PI / 2);
+      ringGeo.translate(0, 0.0035, 0);
+      const dotGeo = new THREE.SphereGeometry(0.006, 10, 10);
+      dotGeo.translate(0, 0.004, 0);
+
+      const fireMat = new THREE.MeshBasicMaterial({
+        color: 0xf97316,
+        side: THREE.DoubleSide,
+      });
+      const stormMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        side: THREE.DoubleSide,
+      });
+      const volcanoMat = new THREE.MeshBasicMaterial({
+        color: 0xef4444,
+        side: THREE.DoubleSide,
+      });
+
+      const up = new THREE.Vector3(0, 1, 0);
+
+      for (const ev of eonetEvents) {
+        const catLower = ev.category.toLowerCase();
+        const mat = catLower.includes("fire")
+          ? fireMat
+          : catLower.includes("volcan")
+            ? volcanoMat
+            : stormMat;
+
+        const node = new THREE.Group();
+        const surface = latLonToVector3(ev.latitude, ev.longitude, GLOBE_RADIUS);
+        node.position.copy(surface);
+        node.quaternion.setFromUnitVectors(up, surface.clone().normalize());
+
+        node.add(new THREE.Mesh(ringGeo, mat));
+        node.add(new THREE.Mesh(dotGeo, mat));
+        targetGroup.add(node);
+      }
+
+      disposeHazards = () => {
+        ringGeo.dispose();
+        dotGeo.dispose();
+        fireMat.dispose();
+        stormMat.dispose();
+        volcanoMat.dispose();
+      };
+    })();
+
+    return () => {
+      cancelled = true;
+      disposeHazards?.();
+    };
+  }, [eonetEvents, showEonetHazards, textureState]);
+
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="absolute inset-0" />
-      <div
-        className="glass-pill absolute left-4 top-4 z-10 inline-flex items-center gap-1 rounded-pill p-1"
-        role="group"
-        aria-label="NASA GIBS imagery layer"
-      >
-        {GIBS_LAYERS.map((layer) => {
-          const active = layer.id === gibsLayer;
-          return (
-            <button
-              key={layer.id}
-              type="button"
-              onClick={() => setGibsLayer(layer.id)}
-              data-agent-action={`select-gibs-${layer.id}`}
-              className={`rounded-pill px-2.5 py-1 font-mono text-[10px] font-medium transition-all ${
-                active
-                  ? "bg-white/15 text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-              title={layer.attribution}
-            >
-              {layer.shortLabel}
-            </button>
-          );
-        })}
+      <div className="absolute left-4 top-4 z-10 flex flex-wrap items-center gap-2">
+        <div
+          className="glass-pill inline-flex items-center gap-1 rounded-pill p-1"
+          role="group"
+          aria-label="NASA GIBS imagery layer"
+        >
+          {GIBS_LAYERS.map((layer) => {
+            const active = layer.id === gibsLayer;
+            return (
+              <button
+                key={layer.id}
+                type="button"
+                onClick={() => setGibsLayer(layer.id)}
+                data-agent-action={`select-gibs-${layer.id}`}
+                className={`rounded-pill px-2.5 py-1 font-mono text-[10px] font-medium transition-all ${
+                  active
+                    ? "bg-white/15 text-white shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+                title={layer.attribution}
+              >
+                {layer.shortLabel}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowEonetHazards((prev) => !prev)}
+          aria-pressed={showEonetHazards}
+          data-agent-action="toggle-eonet-3d-hazards"
+          title="Toggle live NASA EONET v3 natural hazard rings on the 3D globe"
+          className={`glass-pill inline-flex items-center gap-1.5 rounded-pill border px-3 py-1.5 font-mono text-[10px] font-medium transition-all ${
+            showEonetHazards
+              ? "border-amber-400/45 bg-amber-500/15 text-amber-200"
+              : "border-white/10 text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              showEonetHazards ? "animate-pulse bg-amber-400" : "bg-slate-500"
+            }`}
+          />
+          <span>EONET Hazards ({eonetEvents.length})</span>
+        </button>
       </div>
       {textureState === "loading" ? (
         <div className="glass-pill pointer-events-none absolute bottom-4 left-4 rounded-pill px-3.5 py-1.5 font-mono text-xs text-slate-300">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PlanetaryIntelBlock } from "@/components/PlanetaryIntelBlock";
 import { TrendMiniChart } from "@/components/TrendMiniChart";
 import { TrendPostSkeleton } from "@/components/TrendPostSkeleton";
 import type { ToastVariant } from "@/components/Toast";
@@ -367,6 +368,8 @@ function ReadyPost({
           {first && last ? ` · ${first} – ${last}` : ""} · NASA POWER ({trend.dataSource})
         </p>
       </div>
+
+      <PlanetaryIntelBlock regionId={trend.region.id} />
 
       {trend.supplemental && (
         <section

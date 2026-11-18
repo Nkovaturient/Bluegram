@@ -36,7 +36,11 @@ _autoload_dotenv()
 
 from analysis import SeriesRejected, compute_fdr_qvalues, compute_trend  # noqa: E402
 from partners import (  # noqa: E402
+    fetch_global_eonet_events,
+    fetch_planetary_stac_scene,
     fetch_region_eonet_events,
+    fetch_synoptic_nowcast,
+    get_isro_ground_telemetry,
     get_provider_status,
     get_region_supplemental,
 )
@@ -101,6 +105,12 @@ def _variable(variable: str) -> VariableSpec:
     return found
 
 
+@app.get("/api/events/global")
+async def global_events(request: Request) -> dict[str, object]:
+    events = await fetch_global_eonet_events(request.app.state.http)
+    return {"events": events}
+
+
 @app.get("/api/events")
 async def region_events(
     request: Request,
@@ -111,6 +121,26 @@ async def region_events(
         raise HTTPException(status_code=404, detail=f"Unknown region '{region}'")
     events = await fetch_region_eonet_events(request.app.state.http, found)
     return {"regionId": found.id, "events": events}
+
+
+@app.get("/api/planetary-intel")
+async def planetary_intel(
+    request: Request,
+    region: str = Query(min_length=1),
+) -> dict[str, object]:
+    found = BY_ID.get(region)
+    if found is None:
+        raise HTTPException(status_code=404, detail=f"Unknown region '{region}'")
+    stac_scene, synoptic = await asyncio.gather(
+        fetch_planetary_stac_scene(request.app.state.http, found),
+        fetch_synoptic_nowcast(request.app.state.http, found),
+    )
+    return {
+        "regionId": found.id,
+        "stacScene": stac_scene,
+        "synoptic": synoptic,
+        "isroTelemetry": get_isro_ground_telemetry(found),
+    }
 
 
 @app.get("/api/trend")

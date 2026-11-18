@@ -39,6 +39,55 @@ export type EonetEvent = {
   sourceUrl: string;
 };
 
+export type GlobalEonetEvent = {
+  id: string;
+  title: string;
+  category: string;
+  date: string;
+  latitude: number;
+  longitude: number;
+  sourceUrl: string;
+};
+
+export type PlanetaryStacScene = {
+  id: string;
+  collection: string;
+  platform: string;
+  datetime: string;
+  cloudCover: number | null;
+  previewUrl: string | null;
+  catalogUrl: string;
+  stacApiUrl: string;
+};
+
+export type SynopticNowcast = {
+  source: string;
+  providerLabel: string;
+  observedAt: string;
+  temperatureC: number | null;
+  precip24hMm: number | null;
+  windSpeedMs: number | null;
+  pressureHpa: number | null;
+  humidityPct: number | null;
+};
+
+export type IsroGroundTelemetry = {
+  groundStation: string;
+  downlinkBand: string;
+  scienceArchive: string;
+  datasetId: string;
+  archiveUrl: string;
+  istracUrl: string;
+  issdcUrl: string;
+};
+
+export type PlanetaryIntelResponse = {
+  regionId: string;
+  stacScene: PlanetaryStacScene;
+  synoptic: SynopticNowcast;
+  isroTelemetry: IsroGroundTelemetry;
+};
+
 export type SupplementalInfo = {
   source: string;
   agency: string;

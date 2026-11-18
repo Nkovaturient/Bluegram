@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PlanetaryIntelBlock } from "@/components/PlanetaryIntelBlock";
 import { TrendMiniChart } from "@/components/TrendMiniChart";
 import type { ToastVariant } from "@/components/Toast";
 import {
@@ -394,6 +395,9 @@ export function PulseFeedCard({
           </div>
         )}
       </section>
+
+      {/* 3b. Live Planetary Computer STAC + Meteomatics Synoptic + ISRO ISTRAC/ISSDC */}
+      {hasEnteredView && <PlanetaryIntelBlock regionId={item.region.id} />}
 
       {/* 4. Multi-Agency Consensus Strip & Interactive Mission Tabs (NASA · ESA · JAXA · ISRO · Roscosmos · CNSA) */}
       {dossier && (
