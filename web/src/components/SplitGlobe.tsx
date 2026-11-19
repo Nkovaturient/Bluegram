@@ -10,10 +10,12 @@ import {
 } from "@/lib/gibsLayers";
 import {
   GLOBE_RADIUS,
+  ICON_MARKER_SIZE,
   createAtmosphereHaloMesh,
-  createSlopePinMesh,
+  createVariableIconMarker,
   latLonToVector3,
   orientGroupOnSphere,
+  type VariableIconMarkerHandle,
 } from "@/lib/globeGeo";
 import { formatCoord } from "@/lib/labels";
 import { slopeColorHex, slopeSpan } from "@/lib/slopeColor";
@@ -32,30 +34,33 @@ type SplitGlobeProps = {
 
 export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const pinMatARef = useRef<MeshBasicMaterial | null>(null);
-  const pinMatBRef = useRef<MeshBasicMaterial | null>(null);
+  const pinARef = useRef<VariableIconMarkerHandle | null>(null);
+  const pinBRef = useRef<VariableIconMarkerHandle | null>(null);
   const matARef = useRef<MeshBasicMaterial | null>(null);
   const matBRef = useRef<MeshBasicMaterial | null>(null);
   const slopesRef = useRef(slopes);
+  const variableRef = useRef(variable);
   slopesRef.current = slopes;
+  variableRef.current = variable;
 
   const [gibsLayer, setGibsLayer] = useState<GibsLayerId>("blue-marble");
+  const loadedGibsLayerRef = useRef<GibsLayerId>("blue-marble");
+  const [layerLoading, setLayerLoading] = useState<GibsLayerId | null>(null);
+  const [layerSwitchError, setLayerSwitchError] = useState<string | null>(null);
   const [textureState, setTextureState] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     const span = slopeSpan(slopes);
     const slopeA = slopes[regionA.id];
     const slopeB = slopes[regionB.id];
-    if (pinMatARef.current) {
-      pinMatARef.current.color.setHex(
-        typeof slopeA === "number" ? slopeColorHex(slopeA, span) : 0xff6b4a,
-      );
-    }
-    if (pinMatBRef.current) {
-      pinMatBRef.current.color.setHex(
-        typeof slopeB === "number" ? slopeColorHex(slopeB, span) : 0xff6b4a,
-      );
-    }
+    pinARef.current?.update(
+      variable,
+      typeof slopeA === "number" ? slopeColorHex(slopeA, span) : 0xff6b4a,
+    );
+    pinBRef.current?.update(
+      variable,
+      typeof slopeB === "number" ? slopeColorHex(slopeB, span) : 0xff6b4a,
+    );
   }, [slopes, regionA.id, regionB.id, variable]);
 
   useEffect(() => {
@@ -143,15 +148,23 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
           ? slopeColorHex(currentSlopes[regionB.id], span)
           : 0xff6b4a;
 
-      const pinObjA = createSlopePinMesh(colorA);
+      const pinObjA = createVariableIconMarker(
+        variableRef.current,
+        colorA,
+        ICON_MARKER_SIZE * 1.15,
+      );
       orientGroupOnSphere(pinObjA.group, regionA.latitude, regionA.longitude, GLOBE_RADIUS);
       earthA.add(pinObjA.group);
-      pinMatARef.current = pinObjA.material;
+      pinARef.current = pinObjA;
 
-      const pinObjB = createSlopePinMesh(colorB);
+      const pinObjB = createVariableIconMarker(
+        variableRef.current,
+        colorB,
+        ICON_MARKER_SIZE * 1.15,
+      );
       orientGroupOnSphere(pinObjB.group, regionB.latitude, regionB.longitude, GLOBE_RADIUS);
       earthB.add(pinObjB.group);
-      pinMatBRef.current = pinObjB.material;
+      pinBRef.current = pinObjB;
 
       const targetCamA = latLonToVector3(
         regionA.latitude,
@@ -248,8 +261,8 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
 
       cleanup = () => {
         disposed = true;
-        pinMatARef.current = null;
-        pinMatBRef.current = null;
+        pinARef.current = null;
+        pinBRef.current = null;
         matARef.current = null;
         matBRef.current = null;
         if (frame) {
@@ -284,28 +297,44 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
   }, [regionA, regionB]);
 
   useEffect(() => {
-    if (!matARef.current || !matBRef.current) {
+    if (!matARef.current || !matBRef.current || gibsLayer === loadedGibsLayerRef.current) {
+      setLayerLoading(null);
+      setLayerSwitchError(null);
       return;
     }
     let cancelled = false;
+    setLayerLoading(gibsLayer);
+    setLayerSwitchError(null);
     void (async () => {
       const THREE = await import("three");
       if (cancelled) return;
       const loader = new THREE.TextureLoader();
       loader.setCrossOrigin("anonymous");
-      loader.load(getGibsLayer(gibsLayer).wmsUrl, (texture) => {
-        if (cancelled || !matARef.current || !matBRef.current) {
-          texture.dispose();
-          return;
-        }
-        texture.colorSpace = THREE.SRGBColorSpace;
-        const prevMap = matARef.current.map;
-        matARef.current.map = texture;
-        matARef.current.needsUpdate = true;
-        matBRef.current.map = texture;
-        matBRef.current.needsUpdate = true;
-        prevMap?.dispose();
-      });
+      const layer = getGibsLayer(gibsLayer);
+      loader.load(
+        layer.wmsUrl,
+        (texture) => {
+          if (cancelled || !matARef.current || !matBRef.current) {
+            texture.dispose();
+            return;
+          }
+          texture.colorSpace = THREE.SRGBColorSpace;
+          const prevMap = matARef.current.map;
+          matARef.current.map = texture;
+          matARef.current.needsUpdate = true;
+          matBRef.current.map = texture;
+          matBRef.current.needsUpdate = true;
+          prevMap?.dispose();
+          loadedGibsLayerRef.current = gibsLayer;
+          setLayerLoading(null);
+        },
+        undefined,
+        () => {
+          if (cancelled) return;
+          setLayerLoading(null);
+          setLayerSwitchError(`Unable to load ${layer.shortLabel}`);
+        },
+      );
     })();
     return () => {
       cancelled = true;
@@ -336,30 +365,62 @@ export function SplitGlobe({ regionA, regionB, slopes, variable }: SplitGlobePro
       </div>
 
       {/* GIBS Layer Switcher */}
-      <div
-        className="glass-pill absolute left-4 top-4 z-20 inline-flex items-center gap-1 rounded-pill p-1"
-        role="group"
-        aria-label="NASA GIBS imagery layer"
-      >
-        {GIBS_LAYERS.map((layer) => {
-          const active = layer.id === gibsLayer;
-          return (
-            <button
-              key={layer.id}
-              type="button"
-              onClick={() => setGibsLayer(layer.id)}
-              data-agent-action={`select-gibs-${layer.id}`}
-              className={`rounded-pill px-2.5 py-1 font-mono text-[10px] font-medium transition-all ${
-                active
-                  ? "bg-white/15 text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-              title={layer.attribution}
-            >
-              {layer.shortLabel}
-            </button>
-          );
-        })}
+      <div className="absolute left-4 top-4 z-20 flex flex-wrap items-center gap-2">
+        <div
+          className="glass-pill inline-flex items-center gap-1 rounded-pill p-1"
+          role="group"
+          aria-label="NASA GIBS imagery layer"
+        >
+          {GIBS_LAYERS.map((layer) => {
+            const active = layer.id === gibsLayer;
+            const isLoadingThis = layerLoading === layer.id;
+            return (
+              <button
+                key={layer.id}
+                type="button"
+                onClick={() => setGibsLayer(layer.id)}
+                aria-busy={isLoadingThis}
+                data-agent-action={`select-gibs-${layer.id}`}
+                className={`inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 font-mono text-[10px] font-medium transition-all ${
+                  active
+                    ? "bg-white/15 text-white shadow-sm"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+                title={layer.attribution}
+              >
+                {isLoadingThis && (
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-sky-300/30 border-t-sky-300"
+                    aria-hidden="true"
+                  />
+                )}
+                <span>{layer.shortLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {layerLoading ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="glass-pill inline-flex items-center gap-2 rounded-pill border border-sky-400/30 bg-[#04090f]/85 px-3 py-1.5 font-mono text-[10px] text-sky-200"
+          >
+            <span
+              className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-sky-300/30 border-t-sky-300"
+              aria-hidden="true"
+            />
+            <span>Loading NASA GIBS {getGibsLayer(layerLoading).shortLabel}…</span>
+          </div>
+        ) : layerSwitchError ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="glass-pill inline-flex items-center gap-1.5 rounded-pill border border-rose-400/35 bg-rose-950/70 px-3 py-1.5 font-mono text-[10px] text-rose-200"
+          >
+            <span>{layerSwitchError}</span>
+          </div>
+        ) : null}
       </div>
 
       {/* Calibrated Telemetry Seam & Reticle */}

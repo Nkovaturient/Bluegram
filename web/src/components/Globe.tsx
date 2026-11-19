@@ -23,10 +23,11 @@ import {
 } from "@/lib/gibsLayers";
 import {
   GLOBE_RADIUS,
-  PIN_HEIGHT,
-  PIN_RADIUS,
+  ICON_MARKER_SIZE,
   createAtmosphereHaloMesh,
+  createVariableIconMarker,
   latLonToVector3,
+  type VariableIconMarkerHandle,
 } from "@/lib/globeGeo";
 import { getRegionType } from "@/lib/regionMeta";
 import { slopeColorHex, slopeSpan } from "@/lib/slopeColor";
@@ -43,7 +44,7 @@ type Fly = {
 
 type MarkerGroup = {
   group: Group;
-  pin: Mesh;
+  iconMarker: VariableIconMarkerHandle;
   hit: Mesh;
   labelEl: HTMLDivElement;
 };
@@ -87,13 +88,19 @@ function GlobeInner({
   const globeMaterialRef = useRef<MeshBasicMaterial | null>(null);
   const eonetGroupRef = useRef<Group | null>(null);
   const [gibsLayer, setGibsLayer] = useState<GibsLayerId>("blue-marble");
+  const loadedGibsLayerRef = useRef<GibsLayerId>("blue-marble");
+  const [layerLoading, setLayerLoading] = useState<GibsLayerId | null>(null);
+  const [layerSwitchError, setLayerSwitchError] = useState<string | null>(null);
   const [showEonetHazards, setShowEonetHazards] = useState(true);
   const [eonetEvents, setEonetEvents] = useState<GlobalEonetEvent[]>([]);
+  const [eonetLoading, setEonetLoading] = useState(true);
+  const [eonetRendering, setEonetRendering] = useState(false);
   const [textureState, setTextureState] = useState<"loading" | "ready" | "error">("loading");
   const [textureError, setTextureError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
+    setEonetLoading(true);
     fetchGlobalEonetEvents(controller.signal)
       .then((events) => {
         if (!controller.signal.aborted) {
@@ -102,6 +109,11 @@ function GlobeInner({
       })
       .catch(() => {
         // Ignore abort on unmount / strict-mode remount
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setEonetLoading(false);
+        }
       });
     return () => controller.abort();
   }, []);
@@ -178,12 +190,7 @@ function GlobeInner({
     const markerGroups = new Map<string, MarkerGroup>();
     const hitTargets: Mesh[] = [];
 
-    const pinGeometry = new THREE.ConeGeometry(PIN_RADIUS, PIN_HEIGHT, 12);
-    pinGeometry.translate(0, PIN_HEIGHT / 2 + 0.0025, 0);
-    const collarGeometry = new THREE.CylinderGeometry(PIN_RADIUS * 1.65, PIN_RADIUS * 1.65, 0.004, 16);
-    collarGeometry.translate(0, 0.002, 0);
-    const collarMaterial = new THREE.MeshBasicMaterial({ color: 0x04090f });
-    const hitGeometry = new THREE.SphereGeometry(PIN_RADIUS * 1.35, 12, 12);
+    const hitGeometry = new THREE.SphereGeometry(ICON_MARKER_SIZE * 0.55, 12, 12);
 
     for (const region of regions) {
       const meta = metaById.get(region.id);
@@ -192,12 +199,12 @@ function GlobeInner({
       group.position.copy(surface);
       group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), surface.clone().normalize());
 
-      const collar = new THREE.Mesh(collarGeometry, collarMaterial);
-      group.add(collar);
-
-      const pinMaterial = new THREE.MeshBasicMaterial({ color: 0xff6b4a });
-      const pin = new THREE.Mesh(pinGeometry, pinMaterial);
-      group.add(pin);
+      const iconMarker = createVariableIconMarker(
+        variableRef.current,
+        0xff6b4a,
+        ICON_MARKER_SIZE,
+      );
+      group.add(iconMarker.group);
 
       const hitMaterial = new THREE.MeshBasicMaterial({
         color: 0xffffff,
@@ -206,7 +213,7 @@ function GlobeInner({
         depthWrite: false,
       });
       const hit = new THREE.Mesh(hitGeometry, hitMaterial);
-      hit.position.y = PIN_HEIGHT * 0.55;
+      hit.position.y = ICON_MARKER_SIZE * 0.52;
       hit.userData.regionId = region.id;
       group.add(hit);
       hitTargets.push(hit);
@@ -229,11 +236,11 @@ function GlobeInner({
         onSelectRef.current(region.id);
       });
       const label = new CSS2DObject(labelEl);
-      label.position.set(0, PIN_HEIGHT + 0.06, 0);
+      label.position.set(0, ICON_MARKER_SIZE + 0.045, 0);
       group.add(label);
 
       earth.add(group);
-      markerGroups.set(region.id, { group, pin, hit, labelEl });
+      markerGroups.set(region.id, { group, iconMarker, hit, labelEl });
     }
 
     const loader = new THREE.TextureLoader();
@@ -389,12 +396,9 @@ function GlobeInner({
         marker.group.scale.setScalar(selected ? 1.2 : 1);
 
         const slope = slopesRef.current[id];
-        const pinMaterial = marker.pin.material;
-        if (pinMaterial instanceof THREE.MeshBasicMaterial) {
-          pinMaterial.color.set(
-            typeof slope === "number" ? slopeColorHex(slope, span) : 0x94a3b8,
-          );
-        }
+        const colorHex =
+          typeof slope === "number" ? slopeColorHex(slope, span) : 0x94a3b8;
+        marker.iconMarker.update(activeVariable, colorHex);
 
         marker.group.getWorldPosition(markerWorld);
         markerNormal.copy(markerWorld).normalize();
@@ -444,18 +448,12 @@ function GlobeInner({
       if (controlsRef.current === controls) {
         controlsRef.current = null;
       }
-      pinGeometry.dispose();
-      collarGeometry.dispose();
-      collarMaterial.dispose();
       hitGeometry.dispose();
       atmosphereHalo.geometry.dispose();
       atmosphereHalo.material.dispose();
       for (const marker of markerGroups.values()) {
-        const pinMat = marker.pin.material;
+        marker.iconMarker.dispose();
         const hitMat = marker.hit.material;
-        if (pinMat instanceof THREE.Material) {
-          pinMat.dispose();
-        }
         if (hitMat instanceof THREE.Material) {
           hitMat.dispose();
         }
@@ -513,27 +511,42 @@ function GlobeInner({
 
   useEffect(() => {
     const mat = globeMaterialRef.current;
-    if (!mat) {
+    if (!mat || gibsLayer === loadedGibsLayerRef.current) {
+      setLayerLoading(null);
+      setLayerSwitchError(null);
       return;
     }
     let cancelled = false;
+    setLayerLoading(gibsLayer);
+    setLayerSwitchError(null);
     void (async () => {
       const THREE = await import("three");
       if (cancelled) return;
       const loader = new THREE.TextureLoader();
       loader.setCrossOrigin("anonymous");
       const layer = getGibsLayer(gibsLayer);
-      loader.load(layer.wmsUrl, (texture) => {
-        if (cancelled || !globeMaterialRef.current) {
-          texture.dispose();
-          return;
-        }
-        texture.colorSpace = THREE.SRGBColorSpace;
-        const prevMap = globeMaterialRef.current.map;
-        globeMaterialRef.current.map = texture;
-        globeMaterialRef.current.needsUpdate = true;
-        prevMap?.dispose();
-      });
+      loader.load(
+        layer.wmsUrl,
+        (texture) => {
+          if (cancelled || !globeMaterialRef.current) {
+            texture.dispose();
+            return;
+          }
+          texture.colorSpace = THREE.SRGBColorSpace;
+          const prevMap = globeMaterialRef.current.map;
+          globeMaterialRef.current.map = texture;
+          globeMaterialRef.current.needsUpdate = true;
+          prevMap?.dispose();
+          loadedGibsLayerRef.current = gibsLayer;
+          setLayerLoading(null);
+        },
+        undefined,
+        () => {
+          if (cancelled) return;
+          setLayerLoading(null);
+          setLayerSwitchError(`Unable to load ${layer.shortLabel}`);
+        },
+      );
     })();
     return () => {
       cancelled = true;
@@ -547,11 +560,13 @@ function GlobeInner({
     }
     group.visible = showEonetHazards;
     if (!showEonetHazards || eonetEvents.length === 0) {
+      setEonetRendering(false);
       return;
     }
 
     let cancelled = false;
     let disposeHazards: (() => void) | undefined;
+    setEonetRendering(true);
 
     void (async () => {
       const THREE = await import("three");
@@ -607,6 +622,9 @@ function GlobeInner({
         stormMat.dispose();
         volcanoMat.dispose();
       };
+      if (!cancelled) {
+        setEonetRendering(false);
+      }
     })();
 
     return () => {
@@ -614,6 +632,13 @@ function GlobeInner({
       disposeHazards?.();
     };
   }, [eonetEvents, showEonetHazards, textureState]);
+
+  const eonetBusy = eonetLoading || eonetRendering;
+  const activeLoadingLabel = layerLoading
+    ? `Loading NASA GIBS ${getGibsLayer(layerLoading).shortLabel}…`
+    : eonetBusy && showEonetHazards
+      ? "Syncing NASA EONET hazards…"
+      : null;
 
   return (
     <div className="relative h-full w-full">
@@ -626,20 +651,28 @@ function GlobeInner({
         >
           {GIBS_LAYERS.map((layer) => {
             const active = layer.id === gibsLayer;
+            const isLoadingThis = layerLoading === layer.id;
             return (
               <button
                 key={layer.id}
                 type="button"
                 onClick={() => setGibsLayer(layer.id)}
+                aria-busy={isLoadingThis}
                 data-agent-action={`select-gibs-${layer.id}`}
-                className={`rounded-pill px-2.5 py-1 font-mono text-[10px] font-medium transition-all ${
+                className={`inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 font-mono text-[10px] font-medium transition-all ${
                   active
                     ? "bg-white/15 text-white shadow-sm"
                     : "text-slate-400 hover:text-slate-200"
                 }`}
                 title={layer.attribution}
               >
-                {layer.shortLabel}
+                {isLoadingThis && (
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-sky-300/30 border-t-sky-300"
+                    aria-hidden="true"
+                  />
+                )}
+                <span>{layer.shortLabel}</span>
               </button>
             );
           })}
@@ -649,6 +682,7 @@ function GlobeInner({
           type="button"
           onClick={() => setShowEonetHazards((prev) => !prev)}
           aria-pressed={showEonetHazards}
+          aria-busy={eonetBusy}
           data-agent-action="toggle-eonet-3d-hazards"
           title="Toggle live NASA EONET v3 natural hazard rings on the 3D globe"
           className={`glass-pill inline-flex items-center gap-1.5 rounded-pill border px-3 py-1.5 font-mono text-[10px] font-medium transition-all ${
@@ -657,13 +691,46 @@ function GlobeInner({
               : "border-white/10 text-slate-400 hover:text-slate-200"
           }`}
         >
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              showEonetHazards ? "animate-pulse bg-amber-400" : "bg-slate-500"
-            }`}
-          />
-          <span>EONET Hazards ({eonetEvents.length})</span>
+          {eonetBusy ? (
+            <span
+              className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-amber-300/30 border-t-amber-300"
+              aria-hidden="true"
+            />
+          ) : (
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                showEonetHazards ? "animate-pulse bg-amber-400" : "bg-slate-500"
+              }`}
+            />
+          )}
+          <span>
+            {eonetLoading
+              ? "EONET Hazards…"
+              : `EONET Hazards (${eonetEvents.length})`}
+          </span>
         </button>
+
+        {activeLoadingLabel ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="glass-pill inline-flex items-center gap-2 rounded-pill border border-sky-400/30 bg-[#04090f]/85 px-3 py-1.5 font-mono text-[10px] text-sky-200"
+          >
+            <span
+              className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-sky-300/30 border-t-sky-300"
+              aria-hidden="true"
+            />
+            <span>{activeLoadingLabel}</span>
+          </div>
+        ) : layerSwitchError ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="glass-pill inline-flex items-center gap-1.5 rounded-pill border border-rose-400/35 bg-rose-950/70 px-3 py-1.5 font-mono text-[10px] text-rose-200"
+          >
+            <span>{layerSwitchError}</span>
+          </div>
+        ) : null}
       </div>
       {textureState === "loading" ? (
         <div className="glass-pill pointer-events-none absolute bottom-4 left-4 rounded-pill px-3.5 py-1.5 font-mono text-xs text-slate-300">
